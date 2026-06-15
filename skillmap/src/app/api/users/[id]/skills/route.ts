@@ -1,15 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { runQuery } from '@/lib/neo4j'
+import { apiError } from '@/lib/api'
 import type { SkillLevel, SkillSource } from '@/types'
 
 const VALID_LEVELS: SkillLevel[] = ['beginner', 'intermediate', 'advanced', 'expert']
 const VALID_SOURCES: SkillSource[] = ['manual', 'git']
 
-// GET /api/users/[id]/skills — list all skills assigned to a user
+// GET /api/users/[id]/skills — any authenticated user
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await getServerSession(authOptions)
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   try {
     // Next.js 16: params is a Promise
     const { id } = await params
@@ -30,18 +37,24 @@ export async function GET(
 
     return NextResponse.json(skills)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return apiError(error)
   }
 }
 
-// POST /api/users/[id]/skills — assign (or update) a skill for a user
+// POST /api/users/[id]/skills — admin only
 // Body: { skillId, level, source? }
 // Uses MERGE so re-posting the same skillId updates level/source instead of creating duplicates
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await getServerSession(authOptions)
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  if (session.user.role !== 'admin') {
+    return NextResponse.json({ error: 'Forbidden: admin role required' }, { status: 403 })
+  }
   try {
     // Next.js 16: params is a Promise
     const { id: userId } = await params
@@ -89,7 +102,6 @@ export async function POST(
 
     return NextResponse.json({ userId, skillId, level, source }, { status: 201 })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return apiError(error)
   }
 }

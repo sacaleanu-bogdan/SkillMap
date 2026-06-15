@@ -21,6 +21,7 @@ export interface User {
   department: string
   seniority: string
   role: Role
+  googleId?: string
   // Optional profile fields
   // Education entries follow the format: "YYYY – YYYY: University, degree / field"
   education?: string[]

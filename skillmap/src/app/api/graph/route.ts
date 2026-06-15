@@ -1,35 +1,33 @@
 import { NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { runQuery } from '@/lib/neo4j'
+import { apiError } from '@/lib/api'
 import type { GraphNode, GraphEdge, User, Skill, SkillLevel, SkillSource, Role } from '@/types'
 
-// GET /api/graph
-// Returns all users and skills as React Flow nodes, and all HAS_SKILL
-// relationships as React Flow edges. Positions are set to {x:0, y:0} —
-// the frontend layout algorithm will calculate real positions at render time.
+// GET /api/graph — any authenticated user
 export async function GET() {
+  const session = await getServerSession(authOptions)
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   try {
-    // Run three focused queries in sequence
-    const userRecords = await runQuery<{
-      id: string; name: string; department: string; seniority: string; role: Role
-    }>(
-      `MATCH (u:User)
-       RETURN u.id AS id, u.name AS name, u.department AS department,
-              u.seniority AS seniority, u.role AS role`
-    )
-
-    const skillRecords = await runQuery<{
-      id: string; name: string; category: string; icon: string | null
-    }>(
-      `MATCH (s:Skill)
-       RETURN s.id AS id, s.name AS name, s.category AS category, s.icon AS icon`
-    )
-
-    const edgeRecords = await runQuery<{
-      userId: string; skillId: string; level: SkillLevel; source: SkillSource
-    }>(
-      `MATCH (u:User)-[r:HAS_SKILL]->(s:Skill)
-       RETURN u.id AS userId, s.id AS skillId, r.level AS level, r.source AS source`
-    )
+    // Run three independent queries in parallel for lower latency
+    const [userRecords, skillRecords, edgeRecords] = await Promise.all([
+      runQuery<{ id: string; name: string; department: string; seniority: string; role: Role }>(
+        `MATCH (u:User)
+         RETURN u.id AS id, u.name AS name, u.department AS department,
+                u.seniority AS seniority, u.role AS role`
+      ),
+      runQuery<{ id: string; name: string; category: string; icon: string | null }>(
+        `MATCH (s:Skill)
+         RETURN s.id AS id, s.name AS name, s.category AS category, s.icon AS icon`
+      ),
+      runQuery<{ userId: string; skillId: string; level: SkillLevel; source: SkillSource }>(
+        `MATCH (u:User)-[r:HAS_SKILL]->(s:Skill)
+         RETURN u.id AS userId, s.id AS skillId, r.level AS level, r.source AS source`
+      ),
+    ])
 
     // Map users → GraphNode (prefixed id prevents collisions with skill ids)
     const userNodes: GraphNode[] = userRecords.map((u) => ({
@@ -60,7 +58,6 @@ export async function GET() {
       edges,
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return apiError(error)
   }
 }

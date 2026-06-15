@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useEffect, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { User, Skill, SkillLevel, Role } from '@/types'
 
@@ -78,9 +78,10 @@ interface Props {
   skills: Skill[]
   // levelMap[userId][skillId] = level (undefined means no relationship)
   levelMap: Record<string, Record<string, SkillLevel>>
+  isAdmin: boolean
 }
 
-export function SkillMatrix({ users, skills, levelMap }: Props) {
+export function SkillMatrix({ users, skills, levelMap, isAdmin }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -104,24 +105,44 @@ export function SkillMatrix({ users, skills, levelMap }: Props) {
 
   const [errorMsg, setErrorMsg] = useState('')
 
+  // Sync assignment selects when users/skills first become available after mount
+  useEffect(() => {
+    setAssignment(prev =>
+      prev.userId === '' && users.length > 0 ? { ...prev, userId: users[0].id } : prev
+    )
+  }, [users])
+
+  useEffect(() => {
+    setAssignment(prev =>
+      prev.skillId === '' && skills.length > 0 ? { ...prev, skillId: skills[0].id } : prev
+    )
+  }, [skills])
+
   // Refresh server component data after a successful mutation
   function refresh() {
     startTransition(() => router.refresh())
   }
 
+  // Shared fetch helper — posts JSON, sets error message on failure
+  async function postJSON(url: string, body: unknown): Promise<boolean> {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setErrorMsg(data.error ?? 'Request failed')
+      return false
+    }
+    return true
+  }
+
   async function handleAddUser(e: React.FormEvent) {
     e.preventDefault()
     setErrorMsg('')
-    const res = await fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...newUser, education, certifications, languages }),
-    })
-    if (!res.ok) {
-      const data = await res.json()
-      setErrorMsg(data.error ?? 'Failed to create user')
-      return
-    }
+    const ok = await postJSON('/api/users', { ...newUser, education, certifications, languages })
+    if (!ok) return
     setNewUser({ name: '', email: '', department: '', seniority: '', role: 'employee' })
     setEducation([])
     setCertifications([])
@@ -132,16 +153,8 @@ export function SkillMatrix({ users, skills, levelMap }: Props) {
   async function handleAddSkill(e: React.FormEvent) {
     e.preventDefault()
     setErrorMsg('')
-    const res = await fetch('/api/skills', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newSkill),
-    })
-    if (!res.ok) {
-      const data = await res.json()
-      setErrorMsg(data.error ?? 'Failed to create skill')
-      return
-    }
+    const ok = await postJSON('/api/skills', newSkill)
+    if (!ok) return
     setNewSkill({ name: '', category: '' })
     refresh()
   }
@@ -149,16 +162,8 @@ export function SkillMatrix({ users, skills, levelMap }: Props) {
   async function handleAssignSkill(e: React.FormEvent) {
     e.preventDefault()
     setErrorMsg('')
-    const res = await fetch(`/api/users/${assignment.userId}/skills`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ skillId: assignment.skillId, level: assignment.level }),
-    })
-    if (!res.ok) {
-      const data = await res.json()
-      setErrorMsg(data.error ?? 'Failed to assign skill')
-      return
-    }
+    const ok = await postJSON(`/api/users/${assignment.userId}/skills`, { skillId: assignment.skillId, level: assignment.level })
+    if (!ok) return
     refresh()
   }
 
@@ -226,8 +231,9 @@ export function SkillMatrix({ users, skills, levelMap }: Props) {
         </div>
       )}
 
-      {/* Management forms */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
+      {/* Management forms — admin only */}
+      {isAdmin ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
 
         {/* Add user form */}
         <form
@@ -304,12 +310,12 @@ export function SkillMatrix({ users, skills, levelMap }: Props) {
             Add Skill
           </h2>
           <input
-            className="w-full rounded bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={INPUT}
             placeholder="Skill name" required
             value={newSkill.name} onChange={(e) => setNewSkill({ ...newSkill, name: e.target.value })}
           />
           <input
-            className="w-full rounded bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className={INPUT}
             placeholder="Category (e.g. Frontend)" required
             value={newSkill.category} onChange={(e) => setNewSkill({ ...newSkill, category: e.target.value })}
           />
@@ -364,6 +370,11 @@ export function SkillMatrix({ users, skills, levelMap }: Props) {
           )}
         </form>
       </div>
+      ) : (
+        <p className="text-xs text-gray-600 pt-2">
+          View-only mode. Contact an admin to add users, skills, or assignments.
+        </p>
+      )}
     </div>
   )
 }

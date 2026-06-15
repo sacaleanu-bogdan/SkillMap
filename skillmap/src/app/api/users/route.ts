@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { runQuery } from '@/lib/neo4j'
+import { apiError, isConstraintError } from '@/lib/api'
 import type { Role } from '@/types'
 
 const VALID_ROLES: Role[] = ['admin', 'manager', 'employee']
 
-// GET /api/users — returns all users (email intentionally excluded from list)
+// GET /api/users — any authenticated user can list users (email excluded)
 export async function GET() {
+  const session = await getServerSession(authOptions)
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   try {
     const users = await runQuery<{
       id: string
@@ -27,8 +34,7 @@ export async function GET() {
     )
     return NextResponse.json(users)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return apiError(error)
   }
 }
 
@@ -36,12 +42,22 @@ export async function GET() {
 // Accepts both en-dash (–) and hyphen (-) as separators
 const EDUCATION_REGEX = /^\d{4}\s*[–-]\s*(\d{4}|present):\s*.+$/i
 
-// POST /api/users — create a new user
+// POST /api/users — admin only
 // Body: { name, email, department, seniority, role, education?, certifications?, languages? }
 export async function POST(request: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  if (session.user.role !== 'admin') {
+    return NextResponse.json({ error: 'Forbidden: admin role required' }, { status: 403 })
+  }
   try {
     const body = await request.json()
-    const { name, email, department, seniority, role, education, certifications, languages } = body
+    const { name, email: rawEmail, department, seniority, role, education, certifications, languages } = body
+
+    // Normalize email to lowercase so duplicates are caught regardless of input casing
+    const email = typeof rawEmail === 'string' ? rawEmail.toLowerCase().trim() : rawEmail
 
     // Validate required fields
     if (!name || !email || !department || !seniority || !role) {
@@ -73,11 +89,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate certifications and languages are string arrays if provided
-    if (certifications !== undefined && !Array.isArray(certifications)) {
-      return NextResponse.json({ error: 'certifications must be an array of strings' }, { status: 400 })
-    }
-    if (languages !== undefined && !Array.isArray(languages)) {
-      return NextResponse.json({ error: 'languages must be an array of strings' }, { status: 400 })
+    for (const [field, value] of [['certifications', certifications], ['languages', languages]]) {
+      if (value !== undefined && !Array.isArray(value)) {
+        return NextResponse.json({ error: `${field} must be an array of strings` }, { status: 400 })
+      }
     }
 
     // Reject duplicate emails before attempting to create
@@ -113,7 +128,9 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    if (isConstraintError(error)) {
+      return NextResponse.json({ error: 'A user with this email already exists' }, { status: 409 })
+    }
+    return apiError(error)
   }
 }

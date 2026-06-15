@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { runQuery } from '@/lib/neo4j'
+import { apiError, isConstraintError } from '@/lib/api'
 import type { Skill } from '@/types'
 
-// GET /api/skills — returns all skills
+// GET /api/skills — any authenticated user can list skills
 export async function GET() {
+  const session = await getServerSession(authOptions)
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   try {
     const skills = await runQuery<Skill>(
       `MATCH (s:Skill)
@@ -13,14 +20,20 @@ export async function GET() {
     )
     return NextResponse.json(skills)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return apiError(error)
   }
 }
 
-// POST /api/skills — create a new skill
+// POST /api/skills — admin only
 // Body: { name, category, icon? }
 export async function POST(request: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  if (session.user.role !== 'admin') {
+    return NextResponse.json({ error: 'Forbidden: admin role required' }, { status: 403 })
+  }
   try {
     const body = await request.json()
     const { name, category, icon } = body
@@ -33,9 +46,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Reject duplicate skill names before attempting to create
+    // Reject duplicate skill names (case-insensitive) before attempting to create
     const existing = await runQuery<{ id: string }>(
-      'MATCH (s:Skill {name: $name}) RETURN s.id AS id',
+      'MATCH (s:Skill) WHERE toLower(s.name) = toLower($name) RETURN s.id AS id',
       { name }
     )
     if (existing.length > 0) {
@@ -55,7 +68,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ id, name, category, icon: icon ?? null }, { status: 201 })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    if (isConstraintError(error)) {
+      return NextResponse.json({ error: 'A skill with this name already exists' }, { status: 409 })
+    }
+    return apiError(error)
   }
 }

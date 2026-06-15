@@ -34,11 +34,18 @@ const LEVEL_RANK: Record<SkillLevel, number> = {
 
 // Full-screen interactive graph canvas with multi-criteria filter support.
 export function SkillGraph() {
-  const { nodes: apiNodes, edges: apiEdges, loading, error } = useGraphData()
+  const { nodes: apiNodes, edges: apiEdges, loading, error, refetch } = useGraphData()
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [filters, setFilters] = useState<FilterCriterion[]>([])
+
+  // Refetch graph data whenever any user edits their profile
+  useEffect(() => {
+    function handleProfileUpdate() { refetch() }
+    window.addEventListener('skillmap:profile-updated', handleProfileUpdate)
+    return () => window.removeEventListener('skillmap:profile-updated', handleProfileUpdate)
+  }, [refetch])
 
   // Derive the skill list for the filter dropdown from the fetched graph nodes
   const availableSkills = useMemo(

@@ -9,9 +9,9 @@ export async function GET() {
     const result = await runQuery<{ ok: number }>('RETURN 1 AS ok')
     return NextResponse.json({ ok: true, neo4j: result })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error'
+    console.error('[API Health] Neo4j connectivity error:', error)
     return NextResponse.json(
-      { ok: false, error: message },
+      { ok: false, error: 'Database unavailable' },
       { status: 503 }
     )
   }
