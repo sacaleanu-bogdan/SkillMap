@@ -27,6 +27,8 @@ export interface User {
   education?: string[]
   certifications?: string[]
   languages?: string[]
+  shortDescription?: string
+  projects?: string[]
 }
 
 export interface Skill {

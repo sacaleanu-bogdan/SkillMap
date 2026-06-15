@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { runQuery } from '@/lib/neo4j'
+import { apiError } from '@/lib/api'
+import type { Role } from '@/types'
+
+const VALID_ROLES: Role[] = ['admin', 'manager', 'employee']
 
 // Education entry format: "YYYY – YYYY: description" or "YYYY – present: description"
 // Accepts both en-dash (–) and hyphen (-) as separators
@@ -9,7 +13,8 @@ const EDUCATION_REGEX = /^\d{4}\s*[–-]\s*(\d{4}|present):\s*.+$/i
 
 // PATCH /api/users/[id] — update a user's editable profile fields.
 // Authorization: admins can update any user; regular users can only update themselves.
-// The following fields are NOT editable: email (OAuth identity), role (admin-only assignment).
+// The following fields are NOT editable: email (OAuth identity).
+// Admins can also update the role field; regular users cannot.
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -38,7 +43,7 @@ export async function PATCH(
 
   try {
     const body = await request.json()
-    const { name, department, seniority, education, certifications, languages } = body
+    const { name, department, seniority, education, certifications, languages, role, shortDescription, projects } = body
 
     if (!name || !department || !seniority) {
       return NextResponse.json(
@@ -66,29 +71,40 @@ export async function PATCH(
     if (languages !== undefined && !Array.isArray(languages)) {
       return NextResponse.json({ error: 'languages must be an array of strings' }, { status: 400 })
     }
+    if (projects !== undefined && !Array.isArray(projects)) {
+      return NextResponse.json({ error: 'projects must be an array of strings' }, { status: 400 })
+    }
 
-    await runQuery(
-      `MATCH (u:User {id: $id})
-       SET u.name        = $name,
-           u.department  = $department,
-           u.seniority   = $seniority,
-           u.education   = $education,
-           u.certifications = $certifications,
-           u.languages   = $languages`,
-      {
-        id,
-        name,
-        department,
-        seniority,
-        education: education ?? [],
-        certifications: certifications ?? [],
-        languages: languages ?? [],
+    // Admins can update role; for non-admins the field is silently ignored
+    let newRole: Role | undefined
+    if (isAdmin && role !== undefined) {
+      if (!VALID_ROLES.includes(role as Role)) {
+        return NextResponse.json({ error: `role must be one of: ${VALID_ROLES.join(', ')}` }, { status: 400 })
       }
-    )
+      newRole = role as Role
+    }
+
+    const queryParams: Record<string, unknown> = {
+      id,
+      name,
+      department,
+      seniority,
+      education: education ?? [],
+      certifications: certifications ?? [],
+      languages: languages ?? [],
+      shortDescription: typeof shortDescription === 'string' ? shortDescription.trim() : '',
+      projects: projects ?? [],
+    }
+    let setClause = `u.name = $name, u.department = $department, u.seniority = $seniority, u.education = $education, u.certifications = $certifications, u.languages = $languages, u.shortDescription = $shortDescription, u.projects = $projects`
+    if (newRole !== undefined) {
+      setClause += ', u.role = $role'
+      queryParams.role = newRole
+    }
+
+    await runQuery(`MATCH (u:User {id: $id}) SET ${setClause}`, queryParams)
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return apiError(error)
   }
 }

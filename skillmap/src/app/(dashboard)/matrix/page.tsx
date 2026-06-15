@@ -15,8 +15,6 @@ export default async function MatrixPage() {
   const session = await getServerSession(authOptions)
   if (!session) redirect('/sign-in')
 
-  const isAdmin = session.user.role === 'admin'
-
   const [users, skills, relationships] = await Promise.all([
     runQuery<User>(
       `MATCH (u:User)
@@ -45,7 +43,7 @@ export default async function MatrixPage() {
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold text-white mb-6">Skill Matrix</h1>
-      <SkillMatrix users={users} skills={skills} levelMap={levelMap} isAdmin={isAdmin} />
+      <SkillMatrix users={users} skills={skills} levelMap={levelMap} />
     </div>
   )
 }

@@ -24,12 +24,15 @@ export async function GET() {
       education: string[] | null
       certifications: string[] | null
       languages: string[] | null
+      shortDescription: string | null
+      projects: string[] | null
     }>(
       `MATCH (u:User)
        RETURN u.id AS id, u.name AS name, u.department AS department,
               u.seniority AS seniority, u.role AS role,
               u.education AS education, u.certifications AS certifications,
-              u.languages AS languages
+              u.languages AS languages,
+              u.shortDescription AS shortDescription, u.projects AS projects
        ORDER BY u.name`
     )
     return NextResponse.json(users)
@@ -54,7 +57,7 @@ export async function POST(request: NextRequest) {
   }
   try {
     const body = await request.json()
-    const { name, email: rawEmail, department, seniority, role, education, certifications, languages } = body
+    const { name, email: rawEmail, department, seniority, role, education, certifications, languages, shortDescription, projects } = body
 
     // Normalize email to lowercase so duplicates are caught regardless of input casing
     const email = typeof rawEmail === 'string' ? rawEmail.toLowerCase().trim() : rawEmail
@@ -88,8 +91,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Validate certifications and languages are string arrays if provided
-    for (const [field, value] of [['certifications', certifications], ['languages', languages]]) {
+    // Validate certifications, languages, and projects are string arrays if provided
+    for (const [field, value] of [['certifications', certifications], ['languages', languages], ['projects', projects]]) {
       if (value !== undefined && !Array.isArray(value)) {
         return NextResponse.json({ error: `${field} must be an array of strings` }, { status: 400 })
       }
@@ -108,23 +111,26 @@ export async function POST(request: NextRequest) {
     }
 
     const id = randomUUID()
-    // Store optional arrays as null when not provided so the property is always present
+    // Store optional arrays/strings as null when not provided so the property is always present
     const edu: string[] = education ?? []
     const certs: string[] = certifications ?? []
     const langs: string[] = languages ?? []
+    const desc: string = typeof shortDescription === 'string' ? shortDescription.trim() : ''
+    const projs: string[] = projects ?? []
 
     // Use parameterized query — never interpolate user input
     await runQuery(
       `CREATE (u:User {
          id: $id, name: $name, email: $email,
          department: $department, seniority: $seniority, role: $role,
-         education: $education, certifications: $certifications, languages: $languages
+         education: $education, certifications: $certifications, languages: $languages,
+         shortDescription: $shortDescription, projects: $projects
        })`,
-      { id, name, email, department, seniority, role, education: edu, certifications: certs, languages: langs }
+      { id, name, email, department, seniority, role, education: edu, certifications: certs, languages: langs, shortDescription: desc, projects: projs }
     )
 
     return NextResponse.json(
-      { id, name, email, department, seniority, role, education: edu, certifications: certs, languages: langs },
+      { id, name, email, department, seniority, role, education: edu, certifications: certs, languages: langs, shortDescription: desc, projects: projs },
       { status: 201 }
     )
   } catch (error) {
