@@ -18,7 +18,8 @@ export async function GET() {
        RETURN u.id AS id, u.name AS name, u.email AS email,
               u.department AS department, u.seniority AS seniority,
               u.role AS role, u.education AS education,
-              u.certifications AS certifications, u.languages AS languages`,
+              u.certifications AS certifications, u.languages AS languages,
+              u.shortDescription AS shortDescription, u.projects AS projects`,
       { email: session.user.email }
     )
 

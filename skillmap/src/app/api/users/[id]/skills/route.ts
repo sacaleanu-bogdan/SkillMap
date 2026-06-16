@@ -41,7 +41,7 @@ export async function GET(
   }
 }
 
-// POST /api/users/[id]/skills — admin only
+// POST /api/users/[id]/skills — admin OR the user themselves
 // Body: { skillId, level, source? }
 // Uses MERGE so re-posting the same skillId updates level/source instead of creating duplicates
 export async function POST(
@@ -52,16 +52,27 @@ export async function POST(
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  if (session.user.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden: admin role required' }, { status: 403 })
-  }
   try {
-    // Next.js 16: params is a Promise
     const { id: userId } = await params
+
+    // Fetch the target user's email to verify ownership
+    const records = await runQuery<{ email: string }>(
+      'MATCH (u:User {id: $id}) RETURN u.email AS email',
+      { id: userId }
+    )
+    if (records.length === 0) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    const isAdmin = session.user.role === 'admin'
+    const isOwner = records[0].email === session.user.email
+    if (!isAdmin && !isOwner) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const body = await request.json()
     const { skillId, level, source = 'manual' } = body
 
-    // Validate required fields
     if (!skillId || !level) {
       return NextResponse.json(
         { error: 'Missing required fields: skillId, level' },
@@ -92,7 +103,6 @@ export async function POST(
       { userId, skillId, level, source }
     )
 
-    // If MATCH found no user or skill, result will be empty
     if (result.length === 0) {
       return NextResponse.json(
         { error: 'User or Skill not found' },
@@ -101,6 +111,49 @@ export async function POST(
     }
 
     return NextResponse.json({ userId, skillId, level, source }, { status: 201 })
+  } catch (error) {
+    return apiError(error)
+  }
+}
+
+// DELETE /api/users/[id]/skills?skillId=xxx — admin OR the user themselves
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await getServerSession(authOptions)
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  try {
+    const { id: userId } = await params
+    const skillId = request.nextUrl.searchParams.get('skillId')
+    if (!skillId) {
+      return NextResponse.json({ error: 'Missing query parameter: skillId' }, { status: 400 })
+    }
+
+    // Fetch the target user's email to verify ownership
+    const records = await runQuery<{ email: string }>(
+      'MATCH (u:User {id: $id}) RETURN u.email AS email',
+      { id: userId }
+    )
+    if (records.length === 0) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    const isAdmin = session.user.role === 'admin'
+    const isOwner = records[0].email === session.user.email
+    if (!isAdmin && !isOwner) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    await runQuery(
+      `MATCH (u:User {id: $userId})-[r:HAS_SKILL]->(s:Skill {id: $skillId})
+       DELETE r`,
+      { userId, skillId }
+    )
+
+    return new NextResponse(null, { status: 204 })
   } catch (error) {
     return apiError(error)
   }
