@@ -16,16 +16,18 @@ const LEVEL_STROKE_COLOR: Record<SkillLevel, string> = {
   expert: '#a78bfa',      // violet-400
 }
 
-// Lay users out in a left column and skills in a right column,
+// Lay users out in a left column, skills in a centre column, and projects in a right column,
 // evenly spaced vertically. The frontend layout algorithm (ELK / d3-force)
 // will replace this in a later phase; for now this gives a readable default.
 function positionNodes(rawNodes: GraphNode[]): Node[] {
   const users = rawNodes.filter((n) => n.type === 'user')
   const skills = rawNodes.filter((n) => n.type === 'skill')
+  const projects = rawNodes.filter((n) => n.type === 'project')
 
   const ROW_HEIGHT = 80
   const USER_X = 80
   const SKILL_X = 500
+  const PROJECT_X = 920
 
   const positioned: Node[] = []
 
@@ -47,6 +49,15 @@ function positionNodes(rawNodes: GraphNode[]): Node[] {
     })
   })
 
+  projects.forEach((node, i) => {
+    positioned.push({
+      id: node.id,
+      type: node.type,
+      data: node.data,
+      position: { x: PROJECT_X, y: i * ROW_HEIGHT + 40 },
+    })
+  })
+
   return positioned
 }
 
@@ -54,20 +65,33 @@ function positionNodes(rawNodes: GraphNode[]): Node[] {
 export function transformGraphData(rawNodes: GraphNode[], rawEdges: GraphEdge[]) {
   const nodes = positionNodes(rawNodes)
 
-  const edges: Edge[] = rawEdges.map((e) => ({
-    id: e.id,
-    source: e.source,
-    target: e.target,
-    label: e.data.level,
-    // Variable thickness and color communicate proficiency at a glance
-    style: {
-      strokeWidth: LEVEL_STROKE_WIDTH[e.data.level],
-      stroke: LEVEL_STROKE_COLOR[e.data.level],
-    },
-    labelStyle: { fill: LEVEL_STROKE_COLOR[e.data.level], fontSize: 10 },
-    labelBgStyle: { fill: '#111827', fillOpacity: 0.8 },
-    data: e.data,
-  }))
+  const edges: Edge[] = rawEdges.map((e) => {
+    if (e.data.edgeKind === 'project') {
+      // User → Project membership edge: amber dashed line, no label
+      return {
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        style: { strokeWidth: 1, stroke: '#d97706', strokeDasharray: '5 4' },
+        data: e.data,
+      }
+    }
+    // User → Skill proficiency edge: variable thickness + color by level
+    const { level } = e.data
+    return {
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      label: level,
+      style: {
+        strokeWidth: LEVEL_STROKE_WIDTH[level],
+        stroke: LEVEL_STROKE_COLOR[level],
+      },
+      labelStyle: { fill: LEVEL_STROKE_COLOR[level], fontSize: 10 },
+      labelBgStyle: { fill: '#111827', fillOpacity: 0.8 },
+      data: e.data,
+    }
+  })
 
   return { nodes, edges }
 }

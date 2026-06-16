@@ -59,18 +59,23 @@ export interface HasSkillRelationship {
 // React Flow compatible graph shapes
 // -------------------------
 
-/** A node in the skill graph — either a User node or a Skill node */
+/** A node in the skill graph — a User, Skill, or Project node */
 export interface GraphNode {
   id: string
-  type: 'user' | 'skill'
-  data: { label: string; meta: User | Skill }
+  type: 'user' | 'skill' | 'project'
+  data: { label: string; meta: User | Skill | Project }
   position: { x: number; y: number }
 }
 
-/** An edge connecting a User node to a Skill node */
+/** Discriminated union for edge payload — skill edges carry proficiency; project edges are plain membership links */
+export type GraphEdgeData =
+  | { edgeKind: 'skill'; level: SkillLevel; source: SkillSource }
+  | { edgeKind: 'project' }
+
+/** An edge in the skill graph — either User→Skill (HAS_SKILL) or User→Project (member) */
 export interface GraphEdge {
   id: string
-  source: string  // user node id
-  target: string  // skill node id
-  data: { level: SkillLevel; source: SkillSource }
+  source: string
+  target: string
+  data: GraphEdgeData
 }

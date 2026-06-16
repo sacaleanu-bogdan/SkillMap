@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { runQuery } from '@/lib/neo4j'
 import { apiError } from '@/lib/api'
 import { hasPermission } from '@/lib/rbac'
-import type { GraphNode, GraphEdge, User, Skill, SkillLevel, SkillSource, Role } from '@/types'
+import type { GraphNode, GraphEdge, User, Skill, SkillLevel, SkillSource, Role, Project } from '@/types'
 
 // GET /api/graph — any authenticated user
 export async function GET() {
@@ -16,14 +16,14 @@ export async function GET() {
   const canSeeSensitive = hasPermission(session.user.role, 'manager')
   try {
     // Run three independent queries in parallel for lower latency
-    const [userRecords, skillRecords, edgeRecords] = await Promise.all([
-      runQuery<{ id: string; name: string; department?: string; seniority: string; role?: Role }>(
+    const [userRecords, skillRecords, edgeRecords, projectRecords] = await Promise.all([
+      runQuery<{ id: string; name: string; department?: string; seniority: string; role?: Role; projects: string[] | null }>(
         canSeeSensitive
           ? `MATCH (u:User)
              RETURN u.id AS id, u.name AS name, u.department AS department,
-                    u.seniority AS seniority, u.role AS role`
+                    u.seniority AS seniority, u.role AS role, u.projects AS projects`
           : `MATCH (u:User)
-             RETURN u.id AS id, u.name AS name, u.seniority AS seniority`
+             RETURN u.id AS id, u.name AS name, u.seniority AS seniority, u.projects AS projects`
       ),
       runQuery<{ id: string; name: string; category: string; icon: string | null }>(
         `MATCH (s:Skill)
@@ -33,13 +33,16 @@ export async function GET() {
         `MATCH (u:User)-[r:HAS_SKILL]->(s:Skill)
          RETURN u.id AS userId, s.id AS skillId, r.level AS level, r.source AS source`
       ),
+      runQuery<{ id: string; name: string }>(
+        `MATCH (p:Project) RETURN p.id AS id, p.name AS name ORDER BY p.name`
+      ),
     ])
 
     // Map users → GraphNode (prefixed id prevents collisions with skill ids)
     const userNodes: GraphNode[] = userRecords.map((u) => ({
       id: `user-${u.id}`,
       type: 'user',
-      data: { label: u.name, meta: u as unknown as User },
+      data: { label: u.name, meta: { ...u, projects: u.projects ?? [] } as unknown as User },
       position: { x: 0, y: 0 },
     }))
 
@@ -51,17 +54,39 @@ export async function GET() {
       position: { x: 0, y: 0 },
     }))
 
-    // Map relationships → GraphEdge
+    // Map relationships → GraphEdge (skill edges)
     const edges: GraphEdge[] = edgeRecords.map((r) => ({
       id: `edge-user-${r.userId}-skill-${r.skillId}`,
       source: `user-${r.userId}`,
       target: `skill-${r.skillId}`,
-      data: { level: r.level, source: r.source },
+      data: { edgeKind: 'skill', level: r.level, source: r.source },
     }))
 
+    // Map projects → GraphNode
+    const projectNodes: GraphNode[] = projectRecords.map((p) => ({
+      id: `project-${p.id}`,
+      type: 'project',
+      data: { label: p.name, meta: p as unknown as Project },
+      position: { x: 0, y: 0 },
+    }))
+
+    // Project membership edges: derived from the projects[] array stored on each user
+    const projectEdges: GraphEdge[] = []
+    for (const u of userRecords) {
+      for (const pid of (u.projects ?? [])) {
+        projectEdges.push({
+          id: `edge-user-${u.id}-project-${pid}`,
+          source: `user-${u.id}`,
+          target: `project-${pid}`,
+          data: { edgeKind: 'project' },
+        })
+      }
+    }
+
     return NextResponse.json({
-      nodes: [...userNodes, ...skillNodes],
-      edges,
+      nodes: [...userNodes, ...skillNodes, ...projectNodes],
+      edges: [...edges, ...projectEdges],
+      projects: projectRecords,
     })
   } catch (error) {
     return apiError(error)

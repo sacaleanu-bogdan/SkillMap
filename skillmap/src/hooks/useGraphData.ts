@@ -7,6 +7,7 @@ import { transformGraphData } from '@/lib/graph/transform'
 interface GraphDataState {
   nodes: Node[]
   edges: Edge[]
+  projects: Array<{ id: string; name: string }>
   loading: boolean
   error: string | null
   // Manually trigger a re-fetch (e.g. after a mutation)
@@ -18,6 +19,7 @@ interface GraphDataState {
 export function useGraphData(): GraphDataState {
   const [nodes, setNodes] = useState<Node[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
+  const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
@@ -41,6 +43,7 @@ export function useGraphData(): GraphDataState {
         const transformed = transformGraphData(data.nodes ?? [], data.edges ?? [])
         setNodes(transformed.nodes)
         setEdges(transformed.edges)
+        setProjects(data.projects ?? [])
       })
       .catch((err: Error) => {
         if (!cancelled) setError(err.message)
@@ -52,5 +55,5 @@ export function useGraphData(): GraphDataState {
     return () => { cancelled = true }
   }, [tick])
 
-  return { nodes, edges, loading, error, refetch }
+  return { nodes, edges, projects, loading, error, refetch }
 }
