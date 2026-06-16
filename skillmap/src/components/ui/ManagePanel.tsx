@@ -110,6 +110,11 @@ export function ManagePanel({ users, skills, projects }: Props) {
   // Form state — add project
   const [newProject, setNewProject] = useState({ name: '', description: '' })
 
+  // Per-tab search query
+  const [userSearch, setUserSearch] = useState('')
+  const [skillSearch, setSkillSearch] = useState('')
+  const [projectSearch, setProjectSearch] = useState('')
+
   function refresh() {
     startTransition(() => router.refresh())
   }
@@ -186,7 +191,7 @@ export function ManagePanel({ users, skills, projects }: Props) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-4 h-full">
       {errorMsg && (
         <div className="rounded-md bg-red-900/40 border border-red-700 px-4 py-3 text-red-300 text-sm">
           {errorMsg}
@@ -216,13 +221,14 @@ export function ManagePanel({ users, skills, projects }: Props) {
 
       {/* ── Users tab ─────────────────────────────────────────── */}
       {activeTab === 'users' && (
-        <div className="space-y-8">
+        <div className="flex gap-6 min-h-0">
 
-          {/* Add User form */}
-          <form
-            onSubmit={handleAddUser}
-            className="rounded-lg border border-gray-800 bg-gray-900 p-4 space-y-3"
-          >
+          {/* Left column: Add User form */}
+          <div className="flex-1 overflow-y-auto">
+            <form
+              onSubmit={handleAddUser}
+              className="max-w-xl rounded-lg border border-gray-800 bg-gray-900 p-4 space-y-3"
+            >
             <h2 className="text-sm font-semibold text-gray-200 uppercase tracking-wide">Add User</h2>
             <input
               className={INPUT} placeholder="Full name" required
@@ -405,165 +411,238 @@ export function ManagePanel({ users, skills, projects }: Props) {
               Add User
             </button>
           </form>
+          </div>
 
-          {/* User list */}
-          <div>
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
-              All Users ({users.length})
-            </h2>
-            {users.length === 0 ? (
-              <p className="text-sm text-gray-500">No users yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {users.map((u) => (
-                  <div
-                    key={u.id}
-                    className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3"
-                  >
-                    <div>
-                      <div className="text-sm font-medium text-gray-200">{u.name}</div>
-                      <div className="text-xs text-gray-500">
-                        {u.email} · {u.department} · {u.seniority} ·{' '}
-                        <span className="capitalize">{u.role}</span>
+          {/* Right column: search + user list */}
+          <div className="w-72 shrink-0 flex flex-col min-h-0 gap-3">
+            {/* Search bar */}
+            <div className="flex items-center gap-1.5 rounded-xl border border-gray-700 bg-gray-900/80 px-3 py-2">
+              <svg className="w-3.5 h-3.5 text-gray-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+              </svg>
+              <input
+                type="text"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="Search users…"
+                className="flex-1 bg-transparent text-xs text-gray-200 placeholder-gray-600 focus:outline-none"
+              />
+              {userSearch && (
+                <button onClick={() => setUserSearch('')} className="text-gray-600 hover:text-gray-400 text-xs leading-none" aria-label="Clear">×</button>
+              )}
+            </div>
+
+            {/* User list */}
+            <div className="flex-1 overflow-y-auto">
+              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                {userSearch
+                  ? `${users.filter((u) => `${u.name} ${u.email} ${u.department}`.toLowerCase().includes(userSearch.toLowerCase())).length} of ${users.length} users`
+                  : `All Users (${users.length})`}
+              </h2>
+              {users.length === 0 ? (
+                <p className="text-sm text-gray-500">No users yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {users
+                    .filter((u) => !userSearch || `${u.name} ${u.email} ${u.department} ${u.seniority}`.toLowerCase().includes(userSearch.toLowerCase()))
+                    .map((u) => (
+                      <div
+                        key={u.id}
+                        className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3"
+                      >
+                        <div>
+                          <div className="text-sm font-medium text-gray-200">{u.name}</div>
+                          <div className="text-xs text-gray-500">
+                            {u.email} · {u.department} · {u.seniority} ·{' '}
+                            <span className="capitalize">{u.role}</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setEditingUser(u)}
+                          className="ml-4 shrink-0 rounded bg-gray-700 hover:bg-gray-600 px-3 py-1.5 text-xs text-gray-200 transition-colors"
+                        >
+                          Edit
+                        </button>
                       </div>
-                    </div>
-                    <button
-                      onClick={() => setEditingUser(u)}
-                      className="ml-4 shrink-0 rounded bg-gray-700 hover:bg-gray-600 px-3 py-1.5 text-xs text-gray-200 transition-colors"
-                    >
-                      Edit
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+                    ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
 
       {/* ── Projects tab ──────────────────────────────────────── */}
       {activeTab === 'projects' && (
-        <div className="space-y-8">
+        <div className="flex gap-6 min-h-0">
 
-          {/* Add Project form */}
-          <form
-            onSubmit={handleAddProject}
-            className="max-w-sm rounded-lg border border-gray-800 bg-gray-900 p-4 space-y-3"
-          >
-            <h2 className="text-sm font-semibold text-gray-200 uppercase tracking-wide">Add Project</h2>
-            <input
-              className={INPUT} placeholder="Project name" required
-              value={newProject.name} onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
-            />
-            <textarea
-              className={`${INPUT} resize-none`}
-              placeholder="Description (optional)"
-              rows={3}
-              value={newProject.description}
-              onChange={(e) => setNewProject({ ...newProject, description: e.target.value })}
-            />
-            <button
-              type="submit" disabled={isPending}
-              className="w-full rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-3 py-2 text-sm font-medium text-white transition-colors"
+          {/* Left column: Add Project form */}
+          <div className="flex-1">
+            <form
+              onSubmit={handleAddProject}
+              className="max-w-xl rounded-lg border border-gray-800 bg-gray-900 p-4 space-y-3"
             >
-              Add Project
-            </button>
-          </form>
+              <h2 className="text-sm font-semibold text-gray-200 uppercase tracking-wide">Add Project</h2>
+              <input
+                className={INPUT} placeholder="Project name" required
+                value={newProject.name} onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
+              />
+              <textarea
+                className={`${INPUT} resize-none`}
+                placeholder="Description (optional)"
+                rows={3}
+                value={newProject.description}
+                onChange={(e) => setNewProject({ ...newProject, description: e.target.value })}
+              />
+              <button
+                type="submit" disabled={isPending}
+                className="w-full rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-3 py-2 text-sm font-medium text-white transition-colors"
+              >
+                Add Project
+              </button>
+            </form>
+          </div>
 
-          {/* Project list */}
-          <div>
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
-              All Projects ({projects.length})
-            </h2>
-            {projects.length === 0 ? (
-              <p className="text-sm text-gray-500">No projects yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {projects.map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3"
-                  >
-                    <div>
-                      <div className="text-sm font-medium text-gray-200">{p.name}</div>
-                      {p.description && (
-                        <div className="text-xs text-gray-500 mt-0.5">{p.description}</div>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => setEditingProject(p)}
-                      className="ml-4 shrink-0 rounded bg-gray-700 hover:bg-gray-600 px-3 py-1.5 text-xs text-gray-200 transition-colors"
-                    >
-                      Edit
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+          {/* Right column: search + project list */}
+          <div className="w-72 shrink-0 flex flex-col min-h-0 gap-3">
+            <div className="flex items-center gap-1.5 rounded-xl border border-gray-700 bg-gray-900/80 px-3 py-2">
+              <svg className="w-3.5 h-3.5 text-gray-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+              </svg>
+              <input
+                type="text"
+                value={projectSearch}
+                onChange={(e) => setProjectSearch(e.target.value)}
+                placeholder="Search projects…"
+                className="flex-1 bg-transparent text-xs text-gray-200 placeholder-gray-600 focus:outline-none"
+              />
+              {projectSearch && (
+                <button onClick={() => setProjectSearch('')} className="text-gray-600 hover:text-gray-400 text-xs leading-none" aria-label="Clear">×</button>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                {projectSearch
+                  ? `${projects.filter((p) => `${p.name} ${p.description ?? ''}`.toLowerCase().includes(projectSearch.toLowerCase())).length} of ${projects.length} projects`
+                  : `All Projects (${projects.length})`}
+              </h2>
+              {projects.length === 0 ? (
+                <p className="text-sm text-gray-500">No projects yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {projects
+                    .filter((p) => !projectSearch || `${p.name} ${p.description ?? ''}`.toLowerCase().includes(projectSearch.toLowerCase()))
+                    .map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3"
+                      >
+                        <div>
+                          <div className="text-sm font-medium text-gray-200">{p.name}</div>
+                          {p.description && (
+                            <div className="text-xs text-gray-500 mt-0.5">{p.description}</div>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => setEditingProject(p)}
+                          className="ml-4 shrink-0 rounded bg-gray-700 hover:bg-gray-600 px-3 py-1.5 text-xs text-gray-200 transition-colors"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
 
       {/* ── Skills tab ────────────────────────────────────────── */}
       {activeTab === 'skills' && (
-        <div className="space-y-8">
+        <div className="flex gap-6 min-h-0">
 
-          {/* Add Skill form */}
-          <form
-            onSubmit={handleAddSkill}
-            className="max-w-sm rounded-lg border border-gray-800 bg-gray-900 p-4 space-y-3"
-          >
-            <h2 className="text-sm font-semibold text-gray-200 uppercase tracking-wide">Add Skill</h2>
-            <input
-              className={INPUT} placeholder="Skill name" required
-              value={newSkill.name} onChange={(e) => setNewSkill({ ...newSkill, name: e.target.value })}
-            />
-            <input
-              className={INPUT} placeholder="Category (e.g. Frontend)" required
-              value={newSkill.category} onChange={(e) => setNewSkill({ ...newSkill, category: e.target.value })}
-            />
-            <input
-              className={INPUT} placeholder="Icon (optional, e.g. 🐍 or a URL)"
-              value={newSkill.icon} onChange={(e) => setNewSkill({ ...newSkill, icon: e.target.value })}
-            />
-            <button
-              type="submit" disabled={isPending}
-              className="w-full rounded bg-green-700 hover:bg-green-600 disabled:opacity-50 px-3 py-2 text-sm font-medium text-white transition-colors"
+          {/* Left column: Add Skill form */}
+          <div className="flex-1">
+            <form
+              onSubmit={handleAddSkill}
+              className="max-w-xl rounded-lg border border-gray-800 bg-gray-900 p-4 space-y-3"
             >
-              Add Skill
-            </button>
-          </form>
+              <h2 className="text-sm font-semibold text-gray-200 uppercase tracking-wide">Add Skill</h2>
+              <input
+                className={INPUT} placeholder="Skill name" required
+                value={newSkill.name} onChange={(e) => setNewSkill({ ...newSkill, name: e.target.value })}
+              />
+              <input
+                className={INPUT} placeholder="Category (e.g. Frontend)" required
+                value={newSkill.category} onChange={(e) => setNewSkill({ ...newSkill, category: e.target.value })}
+              />
+              <input
+                className={INPUT} placeholder="Icon (optional, e.g. 🐍 or a URL)"
+                value={newSkill.icon} onChange={(e) => setNewSkill({ ...newSkill, icon: e.target.value })}
+              />
+              <button
+                type="submit" disabled={isPending}
+                className="w-full rounded bg-green-700 hover:bg-green-600 disabled:opacity-50 px-3 py-2 text-sm font-medium text-white transition-colors"
+              >
+                Add Skill
+              </button>
+            </form>
+          </div>
 
-          {/* Skill list */}
-          <div>
-            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
-              All Skills ({skills.length})
-            </h2>
-            {skills.length === 0 ? (
-              <p className="text-sm text-gray-500">No skills yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {skills.map((s) => (
-                  <div
-                    key={s.id}
-                    className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3"
-                  >
-                    <div>
-                      <div className="text-sm font-medium text-gray-200">
-                        {s.icon ? `${s.icon} ${s.name}` : s.name}
+          {/* Right column: search + skill list */}
+          <div className="w-72 shrink-0 flex flex-col min-h-0 gap-3">
+            <div className="flex items-center gap-1.5 rounded-xl border border-gray-700 bg-gray-900/80 px-3 py-2">
+              <svg className="w-3.5 h-3.5 text-gray-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+              </svg>
+              <input
+                type="text"
+                value={skillSearch}
+                onChange={(e) => setSkillSearch(e.target.value)}
+                placeholder="Search skills…"
+                className="flex-1 bg-transparent text-xs text-gray-200 placeholder-gray-600 focus:outline-none"
+              />
+              {skillSearch && (
+                <button onClick={() => setSkillSearch('')} className="text-gray-600 hover:text-gray-400 text-xs leading-none" aria-label="Clear">×</button>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                {skillSearch
+                  ? `${skills.filter((s) => `${s.name} ${s.category}`.toLowerCase().includes(skillSearch.toLowerCase())).length} of ${skills.length} skills`
+                  : `All Skills (${skills.length})`}
+              </h2>
+              {skills.length === 0 ? (
+                <p className="text-sm text-gray-500">No skills yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {skills
+                    .filter((s) => !skillSearch || `${s.name} ${s.category}`.toLowerCase().includes(skillSearch.toLowerCase()))
+                    .map((s) => (
+                      <div
+                        key={s.id}
+                        className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3"
+                      >
+                        <div>
+                          <div className="text-sm font-medium text-gray-200">
+                            {s.icon ? `${s.icon} ${s.name}` : s.name}
+                          </div>
+                          <div className="text-xs text-gray-500">{s.category}</div>
+                        </div>
+                        <button
+                          onClick={() => setEditingSkill(s)}
+                          className="ml-4 shrink-0 rounded bg-gray-700 hover:bg-gray-600 px-3 py-1.5 text-xs text-gray-200 transition-colors"
+                        >
+                          Edit
+                        </button>
                       </div>
-                      <div className="text-xs text-gray-500">{s.category}</div>
-                    </div>
-                    <button
-                      onClick={() => setEditingSkill(s)}
-                      className="ml-4 shrink-0 rounded bg-gray-700 hover:bg-gray-600 px-3 py-1.5 text-xs text-gray-200 transition-colors"
-                    >
-                      Edit
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+                    ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

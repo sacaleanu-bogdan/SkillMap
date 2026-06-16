@@ -35,9 +35,11 @@ export default async function ManagePage() {
   ])
 
   return (
-    <div className="h-full overflow-auto p-6">
-      <h1 className="text-2xl font-bold text-white mb-6">Manage</h1>
-      <ManagePanel users={users} skills={skills} projects={projects} />
+    <div className="h-full flex flex-col p-6 gap-4 overflow-hidden">
+      <h1 className="text-2xl font-bold text-white shrink-0">Manage</h1>
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <ManagePanel users={users} skills={skills} projects={projects} />
+      </div>
     </div>
   )
 }
