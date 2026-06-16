@@ -2,8 +2,8 @@ services:
   neo4j:
     image: neo4j:5
     ports:
-      - "7474:7474"   # Neo4j Browser
-      - "7687:7687"   # Bolt protocol
+      - "127.0.0.1:7474:7474"   # Neo4j Browser — bound to localhost only (VULN-012)
+      - "127.0.0.1:7687:7687"   # Bolt protocol — bound to localhost only (VULN-012)
     environment:
       NEO4J_AUTH: neo4j/skillmap_dev
     volumes:
@@ -28,6 +28,7 @@ services:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: skillmap_dev
+      # DEV_AUTH_ENABLED is intentionally NOT set here — control it via .env.local (VULN-007)
 
   # One-shot service: runs Cypher constraints/indexes once after Neo4j is healthy
   neo4j-init:

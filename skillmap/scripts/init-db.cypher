@@ -14,6 +14,9 @@ CREATE CONSTRAINT user_googleid_unique IF NOT EXISTS
 CREATE CONSTRAINT skill_name_unique IF NOT EXISTS
   FOR (s:Skill) REQUIRE s.name IS UNIQUE;
 
+CREATE CONSTRAINT project_name_unique IF NOT EXISTS
+  FOR (p:Project) REQUIRE p.name IS UNIQUE;
+
 // Index on HAS_SKILL level for fast proficiency-based filtering
 CREATE INDEX has_skill_level IF NOT EXISTS
   FOR ()-[r:HAS_SKILL]-() ON (r.level);

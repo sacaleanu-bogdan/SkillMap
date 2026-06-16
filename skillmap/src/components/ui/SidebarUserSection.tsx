@@ -2,6 +2,7 @@
 
 import Image from 'next/image'
 import { useState } from 'react'
+import { signOut } from 'next-auth/react'
 import { EditProfileModal } from './EditProfileModal'
 
 interface Props {
@@ -47,13 +48,13 @@ export function SidebarUserSection({ name, image, isAdmin }: Props) {
           ✎ Edit Profile
         </button>
 
-        {/* Sign out */}
-        <a
-          href="/api/auth/signout"
-          className="flex items-center gap-2 rounded-md px-3 py-2 text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
+        {/* Sign out — uses POST-based signOut() to prevent GET-based CSRF (VULN-009) */}
+        <button
+          onClick={() => signOut({ callbackUrl: '/sign-in' })}
+          className="flex items-center gap-2 w-full rounded-md px-3 py-2 text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors text-left"
         >
           ↪ Sign out
-        </a>
+        </button>
       </div>
 
       {editOpen && <EditProfileModal onClose={() => setEditOpen(false)} />}

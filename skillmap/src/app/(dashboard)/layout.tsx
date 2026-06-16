@@ -53,7 +53,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       </aside>
 
       {/* Main content area */}
-      <main className="flex-1 overflow-auto">{children}</main>
+      <main className="flex-1 overflow-hidden">{children}</main>
     </div>
   )
 }

@@ -41,7 +41,7 @@ export default async function MatrixPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="h-full overflow-auto p-6">
       <h1 className="text-2xl font-bold text-white mb-6">Skill Matrix</h1>
       <SkillMatrix users={users} skills={skills} levelMap={levelMap} />
     </div>

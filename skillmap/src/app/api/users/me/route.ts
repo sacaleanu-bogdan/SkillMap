@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { runQuery } from '@/lib/neo4j'
+import { apiError } from '@/lib/api'
 import type { User } from '@/types'
 
 // GET /api/users/me — returns the current user's full profile from Neo4j, looked up by OAuth email
@@ -27,7 +28,7 @@ export async function GET() {
 
     return NextResponse.json(results[0])
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal server error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    // Use the shared apiError helper — logs internally, never leaks DB details to client (VULN-005)
+    return apiError(error)
   }
 }

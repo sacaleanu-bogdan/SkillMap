@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useTransition } from 'react'
-import type { User, Skill, SkillLevel, Role } from '@/types'
+import type { User, Skill, Project, SkillLevel, Role } from '@/types'
 
 const INPUT =
   'w-full rounded bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
@@ -78,11 +78,12 @@ interface SkillAssignment {
 interface Props {
   user: User
   skills: Skill[]
+  projects: Project[]
   onClose: () => void
   onSaved: () => void
 }
 
-export function EditUserModal({ user, skills, onClose, onSaved }: Props) {
+export function EditUserModal({ user, skills, projects, onClose, onSaved }: Props) {
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState('')
 
@@ -94,12 +95,13 @@ export function EditUserModal({ user, skills, onClose, onSaved }: Props) {
   const [certifications, setCertifications] = useState<string[]>(user.certifications ?? [])
   const [languages, setLanguages] = useState<string[]>(user.languages ?? [])
   const [shortDescription, setShortDescription] = useState(user.shortDescription ?? '')
-  const [projects, setProjects] = useState<string[]>(user.projects ?? [])
+  const [selectedProjects, setSelectedProjects] = useState<string[]>(user.projects ?? [])
+  const [projectPicker, setProjectPicker] = useState('')
 
   // Skill assignments
   const [assignments, setAssignments] = useState<SkillAssignment[]>([])
   const [loadingSkills, setLoadingSkills] = useState(true)
-  const [pickerSkillId, setPickerSkillId] = useState(skills[0]?.id ?? '')
+  const [pickerSkillId, setPickerSkillId] = useState('')
   const [pickerLevel, setPickerLevel] = useState<SkillLevel>('intermediate')
 
   // Load existing skill assignments for this user
@@ -121,7 +123,7 @@ export function EditUserModal({ user, skills, onClose, onSaved }: Props) {
     const profileRes = await fetch(`/api/users/${user.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, department, seniority, role, education, certifications, languages, shortDescription, projects }),
+      body: JSON.stringify({ name, department, seniority, role, education, certifications, languages, shortDescription, projects: selectedProjects }),
     })
     if (!profileRes.ok) {
       const data = await profileRes.json().catch(() => ({}))
@@ -227,13 +229,66 @@ export function EditUserModal({ user, skills, onClose, onSaved }: Props) {
                 onChange={(e) => setShortDescription(e.target.value)}
               />
             </div>
-            <MultiEntryField
-              label="Projects (optional)"
-              placeholder="e.g. SkillMap internal dashboard"
-              entries={projects}
-              onAdd={(v) => setProjects([...projects, v])}
-              onRemove={(i) => setProjects(projects.filter((_, idx) => idx !== i))}
-            />
+            {/* Projects dropdown */}
+            <div className="space-y-1.5">
+              <label className="block text-xs text-gray-400">Projects (optional)</label>
+              {selectedProjects.length > 0 && (
+                <div className="space-y-1">
+                  {selectedProjects.map((pid) => {
+                    const proj = projects.find((p) => p.id === pid)
+                    return (
+                      <div key={pid} className="flex items-center justify-between rounded bg-gray-800/60 border border-gray-700/60 px-3 py-1.5">
+                        <span className="text-xs text-gray-300 flex-1">{proj?.name ?? pid}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = selectedProjects.filter((x) => x !== pid)
+                            setSelectedProjects(next)
+                            if (!projectPicker) {
+                              setProjectPicker(pid)
+                            }
+                          }}
+                          className="text-gray-600 hover:text-red-400 transition-colors text-xs"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              {projects.filter((p) => !selectedProjects.includes(p.id)).length > 0 && (
+                <div className="flex gap-1.5">
+                  <select
+                    className="flex-1 rounded bg-gray-800 border border-gray-700 px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    value={projectPicker}
+                    onChange={(e) => setProjectPicker(e.target.value)}
+                  >
+                    <option value="">— select project —</option>
+                    {projects
+                      .filter((p) => !selectedProjects.includes(p.id))
+                      .map((p) => <option key={p.id} value={p.id}>{p.name}</option>)
+                    }
+                  </select>
+                  <button
+                    type="button"
+                    disabled={!projectPicker}
+                    onClick={() => {
+                      if (!projectPicker) return
+                      setSelectedProjects([...selectedProjects, projectPicker])
+                      const remaining = projects.filter((p) => !selectedProjects.includes(p.id) && p.id !== projectPicker)
+                      setProjectPicker(remaining[0]?.id ?? '')
+                    }}
+                    className="rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 px-2.5 py-1.5 text-xs text-gray-200 transition-colors"
+                  >
+                    +
+                  </button>
+                </div>
+              )}
+              {projects.length === 0 && (
+                <p className="text-xs text-gray-500">No projects yet. Create one in the Projects tab first.</p>
+              )}
+            </div>
 
             {/* Skill assignments */}
             {skills.length > 0 && (
@@ -284,6 +339,7 @@ export function EditUserModal({ user, skills, onClose, onSaved }: Props) {
                           value={pickerSkillId}
                           onChange={(e) => setPickerSkillId(e.target.value)}
                         >
+                          <option value="">— select skill —</option>
                           {availableToAdd.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
                         <select
@@ -295,6 +351,7 @@ export function EditUserModal({ user, skills, onClose, onSaved }: Props) {
                         </select>
                         <button
                           type="button"
+                          disabled={!pickerSkillId}
                           onClick={() => {
                             if (!pickerSkillId) return
                             setAssignments([...assignments, { skillId: pickerSkillId, level: pickerLevel }])
@@ -302,7 +359,7 @@ export function EditUserModal({ user, skills, onClose, onSaved }: Props) {
                             const remaining = availableToAdd.filter((s) => s.id !== pickerSkillId)
                             setPickerSkillId(remaining[0]?.id ?? '')
                           }}
-                          className="rounded bg-gray-700 hover:bg-gray-600 px-3 py-2 text-sm text-gray-200 transition-colors"
+                          className="rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 px-3 py-2 text-sm text-gray-200 transition-colors"
                         >
                           +
                         </button>

@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import type { User, Skill, SkillLevel, Role } from '@/types'
+import type { User, Skill, Project, SkillLevel, Role } from '@/types'
 import { EditUserModal } from './EditUserModal'
 import { EditSkillModal } from './EditSkillModal'
+import { EditProjectModal } from './EditProjectModal'
 
 const INPUT =
   'w-full rounded bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
@@ -76,14 +77,16 @@ function MultiEntryField({
 interface Props {
   users: User[]
   skills: Skill[]
+  projects: Project[]
 }
 
-export function ManagePanel({ users, skills }: Props) {
+export function ManagePanel({ users, skills, projects }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-  const [activeTab, setActiveTab] = useState<'users' | 'skills'>('users')
+  const [activeTab, setActiveTab] = useState<'users' | 'skills' | 'projects'>('users')
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [editingSkill, setEditingSkill] = useState<Skill | null>(null)
+  const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
 
   // Form state — add user
@@ -94,20 +97,18 @@ export function ManagePanel({ users, skills }: Props) {
   const [certifications, setCertifications] = useState<string[]>([])
   const [languages, setLanguages] = useState<string[]>([])
   const [shortDescription, setShortDescription] = useState('')
-  const [projects, setProjects] = useState<string[]>([])
+  const [newUserProjects, setNewUserProjects] = useState<string[]>([])
+  const [newUserProjectPicker, setNewUserProjectPicker] = useState('')
 
   // Pending skill assignments for the new user (assigned after creation)
-  const [pendingSkills, setPendingSkills] = useState<{ skillId: string; level: SkillLevel }[]>([])
-  const [pendingSkillId, setPendingSkillId] = useState(skills[0]?.id ?? '')
+  const [pendingSkills, setPendingSkills] = useState<{ skillId: string; level: SkillLevel }[]>([])  
+  const [pendingSkillId, setPendingSkillId] = useState('')
   const [pendingSkillLevel, setPendingSkillLevel] = useState<SkillLevel>('intermediate')
-
-  // Keep pendingSkillId in sync if skills list changes and current value is empty
-  useEffect(() => {
-    setPendingSkillId(prev => prev === '' && skills.length > 0 ? skills[0].id : prev)
-  }, [skills])
-
   // Form state — add skill
   const [newSkill, setNewSkill] = useState({ name: '', category: '', icon: '' })
+
+  // Form state — add project
+  const [newProject, setNewProject] = useState({ name: '', description: '' })
 
   function refresh() {
     startTransition(() => router.refresh())
@@ -133,7 +134,7 @@ export function ManagePanel({ users, skills }: Props) {
     const res = await fetch('/api/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...newUser, education, certifications, languages, shortDescription, projects }),
+      body: JSON.stringify({ ...newUser, education, certifications, languages, shortDescription, projects: newUserProjects }),
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
@@ -154,8 +155,20 @@ export function ManagePanel({ users, skills }: Props) {
     setCertifications([])
     setLanguages([])
     setShortDescription('')
-    setProjects([])
+    setNewUserProjects([])
     setPendingSkills([])
+    refresh()
+  }
+
+  async function handleAddProject(e: React.FormEvent) {
+    e.preventDefault()
+    setErrorMsg('')
+    const ok = await postJSON('/api/projects', {
+      name: newProject.name,
+      ...(newProject.description ? { description: newProject.description } : {}),
+    })
+    if (!ok) return
+    setNewProject({ name: '', description: '' })
     refresh()
   }
 
@@ -182,17 +195,21 @@ export function ManagePanel({ users, skills }: Props) {
 
       {/* Tab switcher */}
       <div className="flex gap-1 border-b border-gray-800">
-        {(['users', 'skills'] as const).map((tab) => (
+        {([
+          { key: 'users', label: `Users (${users.length})` },
+          { key: 'skills', label: `Skills (${skills.length})` },
+          { key: 'projects', label: `Projects (${projects.length})` },
+        ] as const).map(({ key, label }) => (
           <button
-            key={tab}
-            onClick={() => { setActiveTab(tab); setErrorMsg('') }}
+            key={key}
+            onClick={() => { setActiveTab(key); setErrorMsg('') }}
             className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              activeTab === tab
+              activeTab === key
                 ? 'border-blue-500 text-white'
                 : 'border-transparent text-gray-400 hover:text-gray-200'
             }`}
           >
-            {tab === 'users' ? `Users (${users.length})` : `Skills (${skills.length})`}
+            {label}
           </button>
         ))}
       </div>
@@ -260,13 +277,60 @@ export function ManagePanel({ users, skills }: Props) {
                 onChange={(e) => setShortDescription(e.target.value)}
               />
             </div>
-            <MultiEntryField
-              label="Projects (optional)"
-              placeholder="e.g. SkillMap internal dashboard"
-              entries={projects}
-              onAdd={(v) => setProjects([...projects, v])}
-              onRemove={(i) => setProjects(projects.filter((_, idx) => idx !== i))}
-            />
+            {/* Projects dropdown (optional) */}
+            <div className="space-y-1.5">
+              <label className="block text-xs text-gray-400">Projects (optional)</label>
+              {newUserProjects.length > 0 && (
+                <div className="space-y-1">
+                  {newUserProjects.map((pid) => {
+                    const proj = projects.find((p) => p.id === pid)
+                    return (
+                      <div key={pid} className="flex items-center justify-between rounded bg-gray-800/60 border border-gray-700/60 px-3 py-1.5">
+                        <span className="text-xs text-gray-300">{proj?.name ?? pid}</span>
+                        <button
+                          type="button"
+                          onClick={() => setNewUserProjects(newUserProjects.filter((x) => x !== pid))}
+                          className="text-gray-600 hover:text-red-400 transition-colors text-xs"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              {projects.filter((p) => !newUserProjects.includes(p.id)).length > 0 && (
+                <div className="flex gap-1.5">
+                  <select
+                    className="flex-1 rounded bg-gray-800 border border-gray-700 px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    value={newUserProjectPicker}
+                    onChange={(e) => setNewUserProjectPicker(e.target.value)}
+                  >
+                    <option value="">— select project —</option>
+                    {projects
+                      .filter((p) => !newUserProjects.includes(p.id))
+                      .map((p) => <option key={p.id} value={p.id}>{p.name}</option>)
+                    }
+                  </select>
+                  <button
+                    type="button"
+                    disabled={!newUserProjectPicker}
+                    onClick={() => {
+                      if (!newUserProjectPicker) return
+                      setNewUserProjects([...newUserProjects, newUserProjectPicker])
+                      const remaining = projects.filter((p) => !newUserProjects.includes(p.id) && p.id !== newUserProjectPicker)
+                      setNewUserProjectPicker(remaining[0]?.id ?? '')
+                    }}
+                    className="rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 px-2.5 py-1.5 text-xs text-gray-200 transition-colors"
+                  >
+                    +
+                  </button>
+                </div>
+              )}
+              {projects.length === 0 && (
+                <p className="text-xs text-gray-500">No projects yet. Create one in the Projects tab first.</p>
+              )}
+            </div>
 
             {/* Inline skill assignment */}
             {skills.length > 0 && (
@@ -278,6 +342,7 @@ export function ManagePanel({ users, skills }: Props) {
                     value={pendingSkillId}
                     onChange={(e) => setPendingSkillId(e.target.value)}
                   >
+                    <option value="">— select skill —</option>
                     {skills.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                   <select
@@ -289,12 +354,13 @@ export function ManagePanel({ users, skills }: Props) {
                   </select>
                   <button
                     type="button"
+                    disabled={!pendingSkillId}
                     onClick={() => {
                       if (!pendingSkillId) return
                       if (pendingSkills.some((p) => p.skillId === pendingSkillId)) return
                       setPendingSkills([...pendingSkills, { skillId: pendingSkillId, level: pendingSkillLevel }])
                     }}
-                    className="rounded bg-gray-700 hover:bg-gray-600 px-3 py-2 text-sm text-gray-200 transition-colors"
+                    className="rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 px-3 py-2 text-sm text-gray-200 transition-colors"
                   >
                     +
                   </button>
@@ -363,6 +429,69 @@ export function ManagePanel({ users, skills }: Props) {
                     </div>
                     <button
                       onClick={() => setEditingUser(u)}
+                      className="ml-4 shrink-0 rounded bg-gray-700 hover:bg-gray-600 px-3 py-1.5 text-xs text-gray-200 transition-colors"
+                    >
+                      Edit
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Projects tab ──────────────────────────────────────── */}
+      {activeTab === 'projects' && (
+        <div className="space-y-8">
+
+          {/* Add Project form */}
+          <form
+            onSubmit={handleAddProject}
+            className="max-w-sm rounded-lg border border-gray-800 bg-gray-900 p-4 space-y-3"
+          >
+            <h2 className="text-sm font-semibold text-gray-200 uppercase tracking-wide">Add Project</h2>
+            <input
+              className={INPUT} placeholder="Project name" required
+              value={newProject.name} onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
+            />
+            <textarea
+              className={`${INPUT} resize-none`}
+              placeholder="Description (optional)"
+              rows={3}
+              value={newProject.description}
+              onChange={(e) => setNewProject({ ...newProject, description: e.target.value })}
+            />
+            <button
+              type="submit" disabled={isPending}
+              className="w-full rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-3 py-2 text-sm font-medium text-white transition-colors"
+            >
+              Add Project
+            </button>
+          </form>
+
+          {/* Project list */}
+          <div>
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
+              All Projects ({projects.length})
+            </h2>
+            {projects.length === 0 ? (
+              <p className="text-sm text-gray-500">No projects yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {projects.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3"
+                  >
+                    <div>
+                      <div className="text-sm font-medium text-gray-200">{p.name}</div>
+                      {p.description && (
+                        <div className="text-xs text-gray-500 mt-0.5">{p.description}</div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setEditingProject(p)}
                       className="ml-4 shrink-0 rounded bg-gray-700 hover:bg-gray-600 px-3 py-1.5 text-xs text-gray-200 transition-colors"
                     >
                       Edit
@@ -444,6 +573,7 @@ export function ManagePanel({ users, skills }: Props) {
         <EditUserModal
           user={editingUser}
           skills={skills}
+          projects={projects}
           onClose={() => setEditingUser(null)}
           onSaved={() => { setEditingUser(null); refresh() }}
         />
@@ -453,6 +583,13 @@ export function ManagePanel({ users, skills }: Props) {
           skill={editingSkill}
           onClose={() => setEditingSkill(null)}
           onSaved={() => { setEditingSkill(null); refresh() }}
+        />
+      )}
+      {editingProject && (
+        <EditProjectModal
+          project={editingProject}
+          onClose={() => setEditingProject(null)}
+          onSaved={() => { setEditingProject(null); refresh() }}
         />
       )}
     </div>

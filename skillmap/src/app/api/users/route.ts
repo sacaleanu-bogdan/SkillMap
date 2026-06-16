@@ -4,36 +4,49 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { runQuery } from '@/lib/neo4j'
 import { apiError, isConstraintError } from '@/lib/api'
+import { hasPermission } from '@/lib/rbac'
+import { validateStringArray, validateOptionalString } from '@/lib/validation'
 import type { Role } from '@/types'
 
 const VALID_ROLES: Role[] = ['admin', 'manager', 'employee']
 
-// GET /api/users — any authenticated user can list users (email excluded)
+// GET /api/users — any authenticated user can list users
+// department and role are only returned to manager+ (VULN-002 privacy)
 export async function GET() {
   const session = await getServerSession(authOptions)
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  // manager and admin can see department and role; employees cannot
+  const canSeeSensitive = hasPermission(session.user.role, 'manager')
   try {
     const users = await runQuery<{
       id: string
       name: string
-      department: string
+      department?: string
       seniority: string
-      role: Role
+      role?: Role
       education: string[] | null
       certifications: string[] | null
       languages: string[] | null
       shortDescription: string | null
       projects: string[] | null
     }>(
-      `MATCH (u:User)
-       RETURN u.id AS id, u.name AS name, u.department AS department,
-              u.seniority AS seniority, u.role AS role,
-              u.education AS education, u.certifications AS certifications,
-              u.languages AS languages,
-              u.shortDescription AS shortDescription, u.projects AS projects
-       ORDER BY u.name`
+      canSeeSensitive
+        ? `MATCH (u:User)
+           RETURN u.id AS id, u.name AS name, u.department AS department,
+                  u.seniority AS seniority, u.role AS role,
+                  u.education AS education, u.certifications AS certifications,
+                  u.languages AS languages,
+                  u.shortDescription AS shortDescription, u.projects AS projects
+           ORDER BY u.name`
+        : `MATCH (u:User)
+           RETURN u.id AS id, u.name AS name,
+                  u.seniority AS seniority,
+                  u.education AS education, u.certifications AS certifications,
+                  u.languages AS languages,
+                  u.shortDescription AS shortDescription, u.projects AS projects
+           ORDER BY u.name`
     )
     return NextResponse.json(users)
   } catch (error) {
@@ -91,12 +104,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Validate certifications, languages, and projects are string arrays if provided
-    for (const [field, value] of [['certifications', certifications], ['languages', languages], ['projects', projects]]) {
-      if (value !== undefined && !Array.isArray(value)) {
-        return NextResponse.json({ error: `${field} must be an array of strings` }, { status: 400 })
-      }
+    // Validate certifications, languages, and projects are bounded string arrays (VULN-010)
+    for (const [field, value] of [['certifications', certifications], ['languages', languages], ['projects', projects]] as [string, unknown][]) {
+      const err = validateStringArray(field, value)
+      if (err) return NextResponse.json({ error: err }, { status: 400 })
     }
+    const descErr = validateOptionalString('shortDescription', shortDescription)
+    if (descErr) return NextResponse.json({ error: descErr }, { status: 400 })
 
     // Reject duplicate emails before attempting to create
     const existing = await runQuery<{ id: string }>(

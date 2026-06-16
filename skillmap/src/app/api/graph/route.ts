@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { runQuery } from '@/lib/neo4j'
 import { apiError } from '@/lib/api'
+import { hasPermission } from '@/lib/rbac'
 import type { GraphNode, GraphEdge, User, Skill, SkillLevel, SkillSource, Role } from '@/types'
 
 // GET /api/graph — any authenticated user
@@ -11,13 +12,18 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  // Only manager+ receives department and role in graph node metadata (VULN-002)
+  const canSeeSensitive = hasPermission(session.user.role, 'manager')
   try {
     // Run three independent queries in parallel for lower latency
     const [userRecords, skillRecords, edgeRecords] = await Promise.all([
-      runQuery<{ id: string; name: string; department: string; seniority: string; role: Role }>(
-        `MATCH (u:User)
-         RETURN u.id AS id, u.name AS name, u.department AS department,
-                u.seniority AS seniority, u.role AS role`
+      runQuery<{ id: string; name: string; department?: string; seniority: string; role?: Role }>(
+        canSeeSensitive
+          ? `MATCH (u:User)
+             RETURN u.id AS id, u.name AS name, u.department AS department,
+                    u.seniority AS seniority, u.role AS role`
+          : `MATCH (u:User)
+             RETURN u.id AS id, u.name AS name, u.seniority AS seniority`
       ),
       runQuery<{ id: string; name: string; category: string; icon: string | null }>(
         `MATCH (s:Skill)

@@ -38,6 +38,12 @@ export interface Skill {
   icon?: string
 }
 
+export interface Project {
+  id: string
+  name: string
+  description?: string
+}
+
 // -------------------------
 // Graph relationship
 // -------------------------

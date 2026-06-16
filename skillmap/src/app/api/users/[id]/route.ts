@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { runQuery } from '@/lib/neo4j'
 import { apiError } from '@/lib/api'
+import { validateStringArray, validateOptionalString } from '@/lib/validation'
 import type { Role } from '@/types'
 
 const VALID_ROLES: Role[] = ['admin', 'manager', 'employee']
@@ -74,6 +75,14 @@ export async function PATCH(
     if (projects !== undefined && !Array.isArray(projects)) {
       return NextResponse.json({ error: 'projects must be an array of strings' }, { status: 400 })
     }
+
+    // Validate bounded length on array and string fields (VULN-010)
+    for (const [field, value] of [['certifications', certifications], ['languages', languages], ['projects', projects]] as [string, unknown][]) {
+      const err = validateStringArray(field, value)
+      if (err) return NextResponse.json({ error: err }, { status: 400 })
+    }
+    const descErr = validateOptionalString('shortDescription', shortDescription)
+    if (descErr) return NextResponse.json({ error: descErr }, { status: 400 })
 
     // Admins can update role; for non-admins the field is silently ignored
     let newRole: Role | undefined
