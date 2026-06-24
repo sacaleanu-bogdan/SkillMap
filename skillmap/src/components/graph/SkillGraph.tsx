@@ -17,21 +17,13 @@ import { UserNode } from './UserNode'
 import { SkillNode } from './SkillNode'
 import { ProjectNode } from './ProjectNode'
 import { FilterBar, type FilterCriterion, type SkillCriterion, type ProjectCriterion } from './FilterBar'
-import type { SkillLevel, User } from '@/types'
+import type { User, ProjectAssignment } from '@/types'
 
 // Register custom node types — keys must match the `type` field on each node
 const NODE_TYPES: NodeTypes = {
   user: UserNode,
   skill: SkillNode,
   project: ProjectNode,
-}
-
-// Numeric rank for level comparison — higher means more proficient
-const LEVEL_RANK: Record<SkillLevel, number> = {
-  beginner: 0,
-  intermediate: 1,
-  advanced: 2,
-  expert: 3,
 }
 
 // Full-screen interactive graph canvas with multi-criteria filter support.
@@ -89,11 +81,11 @@ export function SkillGraph() {
     const skillFilters = filters.filter((f): f is SkillCriterion => f.type === 'skill')
     const projectFilters = filters.filter((f): f is ProjectCriterion => f.type === 'project')
 
-    // Build skill-edge map: userNodeId → [{skillNodeId, level}]
-    const edgesByUser: Record<string, Array<{ skillNodeId: string; level: SkillLevel }>> = {}
+    // Build skill-edge map: userNodeId → [{skillNodeId, level (years)}]
+    const edgesByUser: Record<string, Array<{ skillNodeId: string; level: number }>> = {}
     for (const edge of apiEdges) {
-      const d = edge.data as { edgeKind?: string; level?: SkillLevel }
-      if (d?.edgeKind !== 'skill' || !d.level) continue
+      const d = edge.data as { edgeKind?: string; level?: number }
+      if (d?.edgeKind !== 'skill' || d.level === undefined) continue
       if (!edgesByUser[edge.source]) edgesByUser[edge.source] = []
       edgesByUser[edge.source].push({ skillNodeId: edge.target, level: d.level })
     }
@@ -113,12 +105,13 @@ export function SkillGraph() {
     for (const node of apiNodes) {
       if (node.type !== 'user') continue
       const userEdges = edgesByUser[node.id] ?? []
-      const userProjects: string[] = (node.data.meta as User)?.projects ?? []
+      const assignments: ProjectAssignment[] = (node.data.meta as User)?.projectAssignments ?? []
+      const userProjects: string[] = assignments.map((pa) => pa.projectId)
 
       // --- Structured filter checks ---
       const satisfiesSkillFilters = skillFilters.every((f) =>
         userEdges.some(
-          (e) => e.skillNodeId === f.skillNodeId && LEVEL_RANK[e.level] >= LEVEL_RANK[f.minLevel]
+          (e) => e.skillNodeId === f.skillNodeId && e.level >= f.minYears
         )
       )
       const satisfiesProjectFilters = projectFilters.every((f) =>

@@ -4,7 +4,8 @@
 // Primitive union types
 // -------------------------
 
-export type SkillLevel = 'beginner' | 'intermediate' | 'advanced' | 'expert'
+/** Years of experience with a skill — a non-negative integer (e.g. 0–50). */
+export type SkillLevel = number
 
 export type SkillSource = 'manual' | 'git'
 
@@ -28,7 +29,8 @@ export interface User {
   certifications?: string[]
   languages?: string[]
   shortDescription?: string
-  projects?: string[]
+  /** Structured project assignments; replaces the old flat string[] */
+  projectAssignments?: ProjectAssignment[]
 }
 
 export interface Skill {
@@ -42,6 +44,13 @@ export interface Project {
   id: string
   name: string
   description?: string
+}
+
+/** A project assignment on a user — carries allocation status and an optional contribution note */
+export interface ProjectAssignment {
+  projectId: string
+  status: 'current' | 'previous'
+  contribution?: string
 }
 
 // -------------------------

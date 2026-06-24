@@ -2,12 +2,10 @@
 
 import { useState, useEffect, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import type { User, Skill, Project, SkillLevel } from '@/types'
+import type { User, Skill, Project, SkillLevel, ProjectAssignment } from '@/types'
 
 const INPUT =
   'w-full rounded bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
-
-const LEVELS: SkillLevel[] = ['beginner', 'intermediate', 'advanced', 'expert']
 
 // Reusable multi-entry list field (education, certifications, languages)
 function MultiEntryField({
@@ -82,6 +80,51 @@ interface UserSkill {
   category: string
   level: SkillLevel
 }
+function ProjectAssignmentRow({
+  name,
+  pa,
+  onChange,
+  onRemove,
+  onMoveToOther,
+  moveLabel,
+}: {
+  name: string
+  pa: ProjectAssignment
+  onChange: (updated: ProjectAssignment) => void
+  onRemove: () => void
+  onMoveToOther: () => void
+  moveLabel: string
+}) {
+  return (
+    <div className="rounded bg-amber-950/40 border border-amber-800/40 px-3 py-2 space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-amber-200 flex-1 truncate">{name}</span>
+        <button
+          type="button"
+          onClick={onMoveToOther}
+          className="text-[10px] text-gray-500 hover:text-amber-400 transition-colors leading-none whitespace-nowrap"
+        >
+          {moveLabel}
+        </button>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="text-amber-700 hover:text-red-400 transition-colors text-xs leading-none shrink-0"
+          aria-label="Remove"
+        >
+          ×
+        </button>
+      </div>
+      <textarea
+        rows={2}
+        value={pa.contribution ?? ''}
+        onChange={(e) => onChange({ ...pa, contribution: e.target.value || undefined })}
+        placeholder="Contribution note (optional)"
+        className="w-full rounded bg-gray-800/60 border border-gray-700/60 px-2.5 py-1.5 text-xs text-gray-300 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-amber-700 resize-none"
+      />
+    </div>
+  )
+}
 
 interface Props {
   onClose: () => void
@@ -106,16 +149,18 @@ export function EditProfileModal({ onClose }: Props) {
   const [languages, setLanguages] = useState<string[]>([])
 
   // Projects
-  const [userProjectIds, setUserProjectIds] = useState<string[]>([])
+  const [projectAssignments, setProjectAssignments] = useState<ProjectAssignment[]>([])
   const [allProjects, setAllProjects] = useState<Project[]>([])
   const [projectPicker, setProjectPicker] = useState('')
+  const [projectPickerStatus, setProjectPickerStatus] = useState<'current' | 'previous'>('current')
+  const [projectPickerContribution, setProjectPickerContribution] = useState('')
 
   // Skills
   const [userSkills, setUserSkills] = useState<UserSkill[]>([])
   const [originalSkillIds, setOriginalSkillIds] = useState<Set<string>>(new Set())
   const [allSkills, setAllSkills] = useState<Skill[]>([])
   const [skillPicker, setSkillPicker] = useState('')
-  const [skillPickerLevel, setSkillPickerLevel] = useState<SkillLevel>('intermediate')
+  const [skillPickerLevel, setSkillPickerLevel] = useState<SkillLevel>(1)
 
   // Load the current user's profile + skills + available projects/skills when the modal opens
   useEffect(() => {
@@ -141,7 +186,7 @@ export function EditProfileModal({ onClose }: Props) {
         setEducation(user.education ?? [])
         setCertifications(user.certifications ?? [])
         setLanguages(user.languages ?? [])
-        setUserProjectIds(user.projects ?? [])
+        setProjectAssignments(user.projectAssignments ?? [])
 
         if (projectsRes.ok) setAllProjects(await projectsRes.json())
         if (skillsRes.ok) setAllSkills(await skillsRes.json())
@@ -166,14 +211,14 @@ export function EditProfileModal({ onClose }: Props) {
     e.preventDefault()
     setSubmitError('')
 
-    // 1. Save profile fields (including updated projects list)
+    // 1. Save profile fields (including updated project assignments)
     const profileRes = await fetch(`/api/users/${userId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name, department, seniority, shortDescription,
         education, certifications, languages,
-        projects: userProjectIds,
+        projectAssignments,
       }),
     })
 
@@ -220,7 +265,7 @@ export function EditProfileModal({ onClose }: Props) {
 
   // Derived: projects not yet assigned to the user
   const availableProjectsToAdd = allProjects.filter(
-    (p) => !userProjectIds.includes(p.id)
+    (p) => !projectAssignments.some((pa) => pa.projectId === p.id)
   )
 
   return (
@@ -311,23 +356,43 @@ export function EditProfileModal({ onClose }: Props) {
               <div className="space-y-1.5">
                 <label className="block text-xs text-gray-400">Projects</label>
 
-                {/* Current projects */}
-                {userProjectIds.length > 0 && (
+                {/* Currently allocated */}
+                {projectAssignments.filter((pa) => pa.status === 'current').length > 0 && (
                   <div className="space-y-1">
-                    {userProjectIds.map((pid) => {
-                      const proj = allProjects.find((p) => p.id === pid)
+                    <p className="text-[10px] font-medium text-amber-500 uppercase tracking-wide">Currently allocated on</p>
+                    {projectAssignments.filter((pa) => pa.status === 'current').map((pa) => {
+                      const proj = allProjects.find((p) => p.id === pa.projectId)
                       return (
-                        <div key={pid} className="flex items-center justify-between rounded bg-amber-950/60 border border-amber-800/50 px-3 py-1.5">
-                          <span className="text-xs text-amber-200">{proj?.name ?? pid}</span>
-                          <button
-                            type="button"
-                            onClick={() => setUserProjectIds(userProjectIds.filter((x) => x !== pid))}
-                            className="text-amber-700 hover:text-red-400 transition-colors text-xs leading-none"
-                            aria-label="Remove project"
-                          >
-                            ×
-                          </button>
-                        </div>
+                        <ProjectAssignmentRow
+                          key={pa.projectId}
+                          name={proj?.name ?? pa.projectId}
+                          pa={pa}
+                          onChange={(updated) => setProjectAssignments(projectAssignments.map((x) => x.projectId === pa.projectId ? updated : x))}
+                          onRemove={() => setProjectAssignments(projectAssignments.filter((x) => x.projectId !== pa.projectId))}
+                          onMoveToOther={() => setProjectAssignments(projectAssignments.map((x) => x.projectId === pa.projectId ? { ...x, status: 'previous' } : x))}
+                          moveLabel="Move to previous"
+                        />
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Previously allocated */}
+                {projectAssignments.filter((pa) => pa.status === 'previous').length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Previously allocated on</p>
+                    {projectAssignments.filter((pa) => pa.status === 'previous').map((pa) => {
+                      const proj = allProjects.find((p) => p.id === pa.projectId)
+                      return (
+                        <ProjectAssignmentRow
+                          key={pa.projectId}
+                          name={proj?.name ?? pa.projectId}
+                          pa={pa}
+                          onChange={(updated) => setProjectAssignments(projectAssignments.map((x) => x.projectId === pa.projectId ? updated : x))}
+                          onRemove={() => setProjectAssignments(projectAssignments.filter((x) => x.projectId !== pa.projectId))}
+                          onMoveToOther={() => setProjectAssignments(projectAssignments.map((x) => x.projectId === pa.projectId ? { ...x, status: 'current' } : x))}
+                          moveLabel="Move to current"
+                        />
                       )
                     })}
                   </div>
@@ -335,29 +400,53 @@ export function EditProfileModal({ onClose }: Props) {
 
                 {/* Add project picker */}
                 {availableProjectsToAdd.length > 0 && (
-                  <div className="flex gap-1.5">
-                    <select
-                      className="flex-1 rounded bg-gray-800 border border-gray-700 px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      value={projectPicker}
-                      onChange={(e) => setProjectPicker(e.target.value)}
-                    >
-                      <option value="">— add project —</option>
-                      {availableProjectsToAdd.map((p) => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      disabled={!projectPicker}
-                      onClick={() => {
-                        if (!projectPicker) return
-                        setUserProjectIds([...userProjectIds, projectPicker])
-                        setProjectPicker('')
-                      }}
-                      className="rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 px-2.5 py-1.5 text-xs text-gray-200 transition-colors"
-                    >
-                      +
-                    </button>
+                  <div className="space-y-1.5 pt-1 border-t border-gray-800">
+                    <div className="flex gap-1.5">
+                      <select
+                        className="flex-1 rounded bg-gray-800 border border-gray-700 px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        value={projectPicker}
+                        onChange={(e) => setProjectPicker(e.target.value)}
+                      >
+                        <option value="">— add project —</option>
+                        {availableProjectsToAdd.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      <select
+                        className="rounded bg-gray-800 border border-gray-700 px-2 py-1.5 text-sm text-gray-200 focus:outline-none"
+                        value={projectPickerStatus}
+                        onChange={(e) => setProjectPickerStatus(e.target.value as 'current' | 'previous')}
+                      >
+                        <option value="current">Current</option>
+                        <option value="previous">Previous</option>
+                      </select>
+                      <button
+                        type="button"
+                        disabled={!projectPicker}
+                        onClick={() => {
+                          if (!projectPicker) return
+                          setProjectAssignments([...projectAssignments, {
+                            projectId: projectPicker,
+                            status: projectPickerStatus,
+                            contribution: projectPickerContribution.trim() || undefined,
+                          }])
+                          setProjectPicker('')
+                          setProjectPickerContribution('')
+                        }}
+                        className="rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 px-2.5 py-1.5 text-xs text-gray-200 transition-colors"
+                      >
+                        +
+                      </button>
+                    </div>
+                    {projectPicker && (
+                      <textarea
+                        rows={2}
+                        className="w-full rounded bg-gray-800 border border-gray-700 px-3 py-1.5 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                        placeholder="Contribution note (optional)"
+                        value={projectPickerContribution}
+                        onChange={(e) => setProjectPickerContribution(e.target.value)}
+                      />
+                    )}
                   </div>
                 )}
                 {allProjects.length === 0 && (
@@ -375,19 +464,21 @@ export function EditProfileModal({ onClose }: Props) {
                     {userSkills.map((us) => (
                       <div key={us.skillId} className="flex items-center gap-2 rounded bg-green-950/50 border border-green-800/50 px-3 py-1.5">
                         <span className="flex-1 text-xs text-green-200 truncate">{us.name}</span>
-                        <select
-                          className="rounded bg-gray-800 border border-gray-700 px-2 py-1 text-xs text-gray-200 focus:outline-none"
+                        <input
+                          type="number"
+                          min={0}
+                          max={50}
+                          className="w-16 rounded bg-gray-800 border border-gray-700 px-2 py-1 text-xs text-gray-200 focus:outline-none"
                           value={us.level}
                           onChange={(e) =>
                             setUserSkills(userSkills.map((s) =>
                               s.skillId === us.skillId
-                                ? { ...s, level: e.target.value as SkillLevel }
+                                ? { ...s, level: Math.max(0, Math.min(50, parseInt(e.target.value, 10) || 0)) }
                                 : s
                             ))
                           }
-                        >
-                          {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-                        </select>
+                        />
+                        <span className="text-xs text-gray-500">yr</span>
                         <button
                           type="button"
                           onClick={() => setUserSkills(userSkills.filter((s) => s.skillId !== us.skillId))}
@@ -414,13 +505,15 @@ export function EditProfileModal({ onClose }: Props) {
                         <option key={s.id} value={s.id}>{s.name}</option>
                       ))}
                     </select>
-                    <select
-                      className="rounded bg-gray-800 border border-gray-700 px-2 py-1.5 text-sm text-gray-200 focus:outline-none"
+                    <input
+                      type="number"
+                      min={0}
+                      max={50}
+                      className="w-16 rounded bg-gray-800 border border-gray-700 px-2 py-1.5 text-sm text-gray-200 focus:outline-none"
                       value={skillPickerLevel}
-                      onChange={(e) => setSkillPickerLevel(e.target.value as SkillLevel)}
-                    >
-                      {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-                    </select>
+                      onChange={(e) => setSkillPickerLevel(Math.max(0, Math.min(50, parseInt(e.target.value, 10) || 0)))}
+                    />
+                    <span className="text-sm text-gray-500 self-center">yr</span>
                     <button
                       type="button"
                       disabled={!skillPicker}

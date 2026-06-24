@@ -4,9 +4,10 @@ import { authOptions } from '@/lib/auth'
 import { runQuery } from '@/lib/neo4j'
 import { apiError } from '@/lib/api'
 import { validateStringArray, validateOptionalString } from '@/lib/validation'
-import type { Role } from '@/types'
+import type { Role, ProjectAssignment } from '@/types'
 
 const VALID_ROLES: Role[] = ['admin', 'manager', 'employee']
+const VALID_PA_STATUSES = ['current', 'previous'] as const
 
 // Education entry format: "YYYY – YYYY: description" or "YYYY – present: description"
 // Accepts both en-dash (–) and hyphen (-) as separators
@@ -44,7 +45,7 @@ export async function PATCH(
 
   try {
     const body = await request.json()
-    const { name, department, seniority, education, certifications, languages, role, shortDescription, projects } = body
+    const { name, department, seniority, education, certifications, languages, role, shortDescription, projectAssignments } = body
 
     if (!name || !department || !seniority) {
       return NextResponse.json(
@@ -72,17 +73,26 @@ export async function PATCH(
     if (languages !== undefined && !Array.isArray(languages)) {
       return NextResponse.json({ error: 'languages must be an array of strings' }, { status: 400 })
     }
-    if (projects !== undefined && !Array.isArray(projects)) {
-      return NextResponse.json({ error: 'projects must be an array of strings' }, { status: 400 })
-    }
 
     // Validate bounded length on array and string fields (VULN-010)
-    for (const [field, value] of [['certifications', certifications], ['languages', languages], ['projects', projects]] as [string, unknown][]) {
+    for (const [field, value] of [['certifications', certifications], ['languages', languages]] as [string, unknown][]) {
       const err = validateStringArray(field, value)
       if (err) return NextResponse.json({ error: err }, { status: 400 })
     }
     const descErr = validateOptionalString('shortDescription', shortDescription)
     if (descErr) return NextResponse.json({ error: descErr }, { status: 400 })
+
+    // Validate projectAssignments structure
+    if (projectAssignments !== undefined) {
+      if (!Array.isArray(projectAssignments)) {
+        return NextResponse.json({ error: 'projectAssignments must be an array' }, { status: 400 })
+      }
+      for (const pa of projectAssignments as ProjectAssignment[]) {
+        if (!pa.projectId || !VALID_PA_STATUSES.includes(pa.status)) {
+          return NextResponse.json({ error: 'Each projectAssignment must have projectId and status (current|previous)' }, { status: 400 })
+        }
+      }
+    }
 
     // Admins can update role; for non-admins the field is silently ignored
     let newRole: Role | undefined
@@ -93,6 +103,10 @@ export async function PATCH(
       newRole = role as Role
     }
 
+    const paArray: ProjectAssignment[] = Array.isArray(projectAssignments) ? projectAssignments : []
+    const paJson = JSON.stringify(paArray)
+    const projectIds = paArray.map((pa) => pa.projectId)
+
     const queryParams: Record<string, unknown> = {
       id,
       name,
@@ -102,9 +116,10 @@ export async function PATCH(
       certifications: certifications ?? [],
       languages: languages ?? [],
       shortDescription: typeof shortDescription === 'string' ? shortDescription.trim() : '',
-      projects: projects ?? [],
+      projectAssignments: paJson,
+      projects: projectIds,
     }
-    let setClause = `u.name = $name, u.department = $department, u.seniority = $seniority, u.education = $education, u.certifications = $certifications, u.languages = $languages, u.shortDescription = $shortDescription, u.projects = $projects`
+    let setClause = `u.name = $name, u.department = $department, u.seniority = $seniority, u.education = $education, u.certifications = $certifications, u.languages = $languages, u.shortDescription = $shortDescription, u.projectAssignments = $projectAssignments, u.projects = $projects`
     if (newRole !== undefined) {
       setClause += ', u.role = $role'
       queryParams.role = newRole

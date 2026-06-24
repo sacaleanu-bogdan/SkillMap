@@ -3,9 +3,9 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { runQuery } from '@/lib/neo4j'
 import { apiError } from '@/lib/api'
-import type { SkillLevel, SkillSource } from '@/types'
+import type { SkillSource } from '@/types'
 
-const VALID_LEVELS: SkillLevel[] = ['beginner', 'intermediate', 'advanced', 'expert']
+const MAX_SKILL_YEARS = 50
 const VALID_SOURCES: SkillSource[] = ['manual', 'git']
 
 // GET /api/users/[id]/skills — any authenticated user
@@ -25,7 +25,7 @@ export async function GET(
       skillId: string
       name: string
       category: string
-      level: SkillLevel
+      level: number
       source: SkillSource
     }>(
       `MATCH (u:User {id: $id})-[r:HAS_SKILL]->(s:Skill)
@@ -80,9 +80,9 @@ export async function POST(
       )
     }
 
-    if (!VALID_LEVELS.includes(level)) {
+    if (typeof level !== 'number' || !Number.isInteger(level) || level < 0 || level > MAX_SKILL_YEARS) {
       return NextResponse.json(
-        { error: `level must be one of: ${VALID_LEVELS.join(', ')}` },
+        { error: `level must be a whole number of years between 0 and ${MAX_SKILL_YEARS}` },
         { status: 400 }
       )
     }

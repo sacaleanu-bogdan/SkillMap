@@ -1,23 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { SkillLevel } from '@/types'
 
-const LEVELS: SkillLevel[] = ['beginner', 'intermediate', 'advanced', 'expert']
-
-const LEVEL_STYLES: Record<SkillLevel, string> = {
-  beginner: 'bg-gray-700 text-gray-300 border-gray-600',
-  intermediate: 'bg-blue-900 text-blue-300 border-blue-700',
-  advanced: 'bg-green-900 text-green-300 border-green-700',
-  expert: 'bg-violet-900 text-violet-300 border-violet-700',
-}
-
-// A skill criterion: user must have a skill at or above minLevel
+// A skill criterion: user must have a skill at or above minYears of experience
 export interface SkillCriterion {
   type: 'skill'
   skillNodeId: string  // React Flow node ID — "skill-<uuid>"
   skillLabel: string
-  minLevel: SkillLevel
+  minYears: number
 }
 
 // A project criterion: user must be assigned to this project
@@ -47,7 +37,7 @@ export function FilterBar({ availableSkills, availableProjects, filters, onChang
 
   const [filterType, setFilterType] = useState<'skill' | 'project'>('skill')
   const [pendingSkillId, setPendingSkillId] = useState('')
-  const [pendingLevel, setPendingLevel] = useState<SkillLevel>('intermediate')
+  const [pendingMinYears, setPendingMinYears] = useState(0)
   const [pendingProjectId, setPendingProjectId] = useState('')
 
   // Keep pending values pointing at valid unused items as filters change
@@ -70,7 +60,7 @@ export function FilterBar({ availableSkills, availableProjects, filters, onChang
       if (!skill) return
       onChange([
         ...filters,
-        { type: 'skill', skillNodeId: pendingSkillId, skillLabel: skill.label, minLevel: pendingLevel },
+        { type: 'skill', skillNodeId: pendingSkillId, skillLabel: skill.label, minYears: pendingMinYears },
       ])
     } else {
       if (!pendingProjectId) return
@@ -103,9 +93,9 @@ export function FilterBar({ availableSkills, availableProjects, filters, onChang
             <span className="text-[10px] text-gray-600 font-medium uppercase mr-0.5">and</span>
           )}
           {f.type === 'skill' ? (
-            <span className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${LEVEL_STYLES[f.minLevel]}`}>
+            <span className="flex items-center gap-1.5 rounded-full border border-blue-700 bg-blue-900 text-blue-300 px-2.5 py-0.5 text-xs font-medium">
               <span>{f.skillLabel}</span>
-              <span className="opacity-60">≥ {f.minLevel}</span>
+              <span className="opacity-60">≥ {f.minYears}yr</span>
               <button
                 onClick={() => removeFilter(i)}
                 className="opacity-50 hover:opacity-100 transition-opacity leading-none"
@@ -153,15 +143,16 @@ export function FilterBar({ availableSkills, availableProjects, filters, onChang
                   <option key={s.id} value={s.id}>{s.label}</option>
                 ))}
               </select>
-              <select
-                className="rounded bg-gray-800 border border-gray-700 px-2 py-1 text-xs text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                value={pendingLevel}
-                onChange={(e) => setPendingLevel(e.target.value as SkillLevel)}
-              >
-                {LEVELS.map((l) => (
-                  <option key={l} value={l}>≥ {l}</option>
-                ))}
-              </select>
+              <span className="text-xs text-gray-500">≥</span>
+              <input
+                type="number"
+                min={0}
+                max={50}
+                className="w-14 rounded bg-gray-800 border border-gray-700 px-2 py-1 text-xs text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                value={pendingMinYears}
+                onChange={(e) => setPendingMinYears(Math.max(0, Math.min(50, parseInt(e.target.value, 10) || 0)))}
+              />
+              <span className="text-xs text-gray-500">yr</span>
             </>
           )}
 

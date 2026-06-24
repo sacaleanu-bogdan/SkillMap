@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import type { User, Skill, Project, SkillLevel, Role } from '@/types'
+import type { User, Skill, Project, SkillLevel, Role, ProjectAssignment } from '@/types'
 import { EditUserModal } from './EditUserModal'
 import { EditSkillModal } from './EditSkillModal'
 import { EditProjectModal } from './EditProjectModal'
@@ -10,7 +10,6 @@ import { EditProjectModal } from './EditProjectModal'
 const INPUT =
   'w-full rounded bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
 
-const LEVELS: SkillLevel[] = ['beginner', 'intermediate', 'advanced', 'expert']
 const ROLES: Role[] = ['employee', 'manager', 'admin']
 
 function MultiEntryField({
@@ -97,13 +96,15 @@ export function ManagePanel({ users, skills, projects }: Props) {
   const [certifications, setCertifications] = useState<string[]>([])
   const [languages, setLanguages] = useState<string[]>([])
   const [shortDescription, setShortDescription] = useState('')
-  const [newUserProjects, setNewUserProjects] = useState<string[]>([])
+  const [newUserProjects, setNewUserProjects] = useState<ProjectAssignment[]>([])
   const [newUserProjectPicker, setNewUserProjectPicker] = useState('')
+  const [newUserProjectPickerStatus, setNewUserProjectPickerStatus] = useState<'current' | 'previous'>('current')
+  const [newUserProjectPickerContribution, setNewUserProjectPickerContribution] = useState('')
 
   // Pending skill assignments for the new user (assigned after creation)
   const [pendingSkills, setPendingSkills] = useState<{ skillId: string; level: SkillLevel }[]>([])  
   const [pendingSkillId, setPendingSkillId] = useState('')
-  const [pendingSkillLevel, setPendingSkillLevel] = useState<SkillLevel>('intermediate')
+  const [pendingSkillLevel, setPendingSkillLevel] = useState<SkillLevel>(1)
   // Form state — add skill
   const [newSkill, setNewSkill] = useState({ name: '', category: '', icon: '' })
 
@@ -139,7 +140,7 @@ export function ManagePanel({ users, skills, projects }: Props) {
     const res = await fetch('/api/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...newUser, education, certifications, languages, shortDescription, projects: newUserProjects }),
+      body: JSON.stringify({ ...newUser, education, certifications, languages, shortDescription, projectAssignments: newUserProjects }),
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))
@@ -161,6 +162,7 @@ export function ManagePanel({ users, skills, projects }: Props) {
     setLanguages([])
     setShortDescription('')
     setNewUserProjects([])
+    setNewUserProjectPicker('')
     setPendingSkills([])
     refresh()
   }
@@ -283,54 +285,93 @@ export function ManagePanel({ users, skills, projects }: Props) {
                 onChange={(e) => setShortDescription(e.target.value)}
               />
             </div>
-            {/* Projects dropdown (optional) */}
+            {/* Projects (optional) */}
             <div className="space-y-1.5">
               <label className="block text-xs text-gray-400">Projects (optional)</label>
-              {newUserProjects.length > 0 && (
+
+              {/* Currently allocated */}
+              {newUserProjects.filter((pa) => pa.status === 'current').length > 0 && (
                 <div className="space-y-1">
-                  {newUserProjects.map((pid) => {
-                    const proj = projects.find((p) => p.id === pid)
+                  <p className="text-[10px] font-medium text-amber-500 uppercase tracking-wide">Currently allocated on</p>
+                  {newUserProjects.filter((pa) => pa.status === 'current').map((pa) => {
+                    const proj = projects.find((p) => p.id === pa.projectId)
                     return (
-                      <div key={pid} className="flex items-center justify-between rounded bg-gray-800/60 border border-gray-700/60 px-3 py-1.5">
-                        <span className="text-xs text-gray-300">{proj?.name ?? pid}</span>
-                        <button
-                          type="button"
-                          onClick={() => setNewUserProjects(newUserProjects.filter((x) => x !== pid))}
-                          className="text-gray-600 hover:text-red-400 transition-colors text-xs"
-                        >
-                          ×
-                        </button>
+                      <div key={pa.projectId} className="rounded bg-amber-950/40 border border-amber-800/40 px-3 py-1.5 flex items-center gap-2">
+                        <span className="text-xs text-amber-200 flex-1 truncate">{proj?.name ?? pa.projectId}</span>
+                        {pa.contribution && <span className="text-[10px] text-gray-500 truncate max-w-[120px]">{pa.contribution}</span>}
+                        <button type="button" onClick={() => setNewUserProjects(newUserProjects.filter((x) => x.projectId !== pa.projectId))} className="text-amber-700 hover:text-red-400 text-xs">×</button>
                       </div>
                     )
                   })}
                 </div>
               )}
-              {projects.filter((p) => !newUserProjects.includes(p.id)).length > 0 && (
-                <div className="flex gap-1.5">
-                  <select
-                    className="flex-1 rounded bg-gray-800 border border-gray-700 px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    value={newUserProjectPicker}
-                    onChange={(e) => setNewUserProjectPicker(e.target.value)}
-                  >
-                    <option value="">— select project —</option>
-                    {projects
-                      .filter((p) => !newUserProjects.includes(p.id))
-                      .map((p) => <option key={p.id} value={p.id}>{p.name}</option>)
-                    }
-                  </select>
-                  <button
-                    type="button"
-                    disabled={!newUserProjectPicker}
-                    onClick={() => {
-                      if (!newUserProjectPicker) return
-                      setNewUserProjects([...newUserProjects, newUserProjectPicker])
-                      const remaining = projects.filter((p) => !newUserProjects.includes(p.id) && p.id !== newUserProjectPicker)
-                      setNewUserProjectPicker(remaining[0]?.id ?? '')
-                    }}
-                    className="rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 px-2.5 py-1.5 text-xs text-gray-200 transition-colors"
-                  >
-                    +
-                  </button>
+
+              {/* Previously allocated */}
+              {newUserProjects.filter((pa) => pa.status === 'previous').length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">Previously allocated on</p>
+                  {newUserProjects.filter((pa) => pa.status === 'previous').map((pa) => {
+                    const proj = projects.find((p) => p.id === pa.projectId)
+                    return (
+                      <div key={pa.projectId} className="rounded bg-gray-800/50 border border-gray-700/50 px-3 py-1.5 flex items-center gap-2">
+                        <span className="text-xs text-gray-300 flex-1 truncate">{proj?.name ?? pa.projectId}</span>
+                        {pa.contribution && <span className="text-[10px] text-gray-500 truncate max-w-[120px]">{pa.contribution}</span>}
+                        <button type="button" onClick={() => setNewUserProjects(newUserProjects.filter((x) => x.projectId !== pa.projectId))} className="text-gray-600 hover:text-red-400 text-xs">×</button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Add picker */}
+              {projects.filter((p) => !newUserProjects.some((pa) => pa.projectId === p.id)).length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex gap-1.5">
+                    <select
+                      className="flex-1 rounded bg-gray-800 border border-gray-700 px-3 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      value={newUserProjectPicker}
+                      onChange={(e) => setNewUserProjectPicker(e.target.value)}
+                    >
+                      <option value="">— select project —</option>
+                      {projects
+                        .filter((p) => !newUserProjects.some((pa) => pa.projectId === p.id))
+                        .map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                    <select
+                      className="rounded bg-gray-800 border border-gray-700 px-2 py-1.5 text-sm text-gray-200 focus:outline-none"
+                      value={newUserProjectPickerStatus}
+                      onChange={(e) => setNewUserProjectPickerStatus(e.target.value as 'current' | 'previous')}
+                    >
+                      <option value="current">Current</option>
+                      <option value="previous">Previous</option>
+                    </select>
+                    <button
+                      type="button"
+                      disabled={!newUserProjectPicker}
+                      onClick={() => {
+                        if (!newUserProjectPicker) return
+                        setNewUserProjects([...newUserProjects, {
+                          projectId: newUserProjectPicker,
+                          status: newUserProjectPickerStatus,
+                          contribution: newUserProjectPickerContribution.trim() || undefined,
+                        }])
+                        setNewUserProjectPicker('')
+                        setNewUserProjectPickerContribution('')
+                      }}
+                      className="rounded bg-gray-700 hover:bg-gray-600 disabled:opacity-40 px-2.5 py-1.5 text-xs text-gray-200 transition-colors"
+                    >
+                      +
+                    </button>
+                  </div>
+                  {newUserProjectPicker && (
+                    <textarea
+                      rows={2}
+                      className="w-full rounded bg-gray-800 border border-gray-700 px-3 py-1.5 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                      placeholder="Contribution note (optional)"
+                      value={newUserProjectPickerContribution}
+                      onChange={(e) => setNewUserProjectPickerContribution(e.target.value)}
+                    />
+                  )}
                 </div>
               )}
               {projects.length === 0 && (
@@ -351,13 +392,15 @@ export function ManagePanel({ users, skills, projects }: Props) {
                     <option value="">— select skill —</option>
                     {skills.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
-                  <select
-                    className="rounded bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    className="w-16 rounded bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-gray-200 focus:outline-none"
                     value={pendingSkillLevel}
-                    onChange={(e) => setPendingSkillLevel(e.target.value as SkillLevel)}
-                  >
-                    {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-                  </select>
+                    onChange={(e) => setPendingSkillLevel(Math.max(0, Math.min(50, parseInt(e.target.value, 10) || 0)))}
+                  />
+                  <span className="text-sm text-gray-500 self-center">yr</span>
                   <button
                     type="button"
                     disabled={!pendingSkillId}
@@ -379,15 +422,17 @@ export function ManagePanel({ users, skills, projects }: Props) {
                         <div key={p.skillId} className="flex items-center justify-between rounded bg-gray-800/60 border border-gray-700/60 px-3 py-1.5">
                           <span className="text-xs text-gray-300">{sk?.name ?? p.skillId}</span>
                           <div className="flex items-center gap-2">
-                            <select
-                              className="rounded bg-gray-800 border border-gray-700 px-2 py-1 text-xs text-gray-200 focus:outline-none"
+                            <input
+                              type="number"
+                              min={0}
+                              max={50}
+                              className="w-14 rounded bg-gray-800 border border-gray-700 px-2 py-1 text-xs text-gray-200 focus:outline-none"
                               value={p.level}
                               onChange={(e) => setPendingSkills(pendingSkills.map((x) =>
-                                x.skillId === p.skillId ? { ...x, level: e.target.value as SkillLevel } : x
+                                x.skillId === p.skillId ? { ...x, level: Math.max(0, Math.min(50, parseInt(e.target.value, 10) || 0)) } : x
                               ))}
-                            >
-                              {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-                            </select>
+                            />
+                            <span className="text-xs text-gray-500">yr</span>
                             <button
                               type="button"
                               onClick={() => setPendingSkills(pendingSkills.filter((x) => x.skillId !== p.skillId))}

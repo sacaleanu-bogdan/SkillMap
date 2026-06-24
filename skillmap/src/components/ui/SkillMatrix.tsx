@@ -1,12 +1,12 @@
 import Link from 'next/link'
 import type { User, Skill, SkillLevel } from '@/types'
 
-// Color scheme for each proficiency level badge
-const LEVEL_STYLES: Record<SkillLevel, string> = {
-  beginner: 'bg-gray-700 text-gray-300',
-  intermediate: 'bg-blue-900 text-blue-300',
-  advanced: 'bg-green-900 text-green-300',
-  expert: 'bg-violet-900 text-violet-300',
+// Badge color based on years of experience thresholds
+function levelStyle(years: SkillLevel): string {
+  if (years >= 10) return 'bg-violet-900 text-violet-300'
+  if (years >= 5) return 'bg-green-900 text-green-300'
+  if (years >= 2) return 'bg-blue-900 text-blue-300'
+  return 'bg-gray-700 text-gray-300'
 }
 
 interface Props {
@@ -60,9 +60,9 @@ export function SkillMatrix({ users, skills, levelMap }: Props) {
                 const level = levelMap[u.id]?.[s.id]
                 return (
                   <td key={s.id} className="px-4 py-3 text-center">
-                    {level ? (
-                      <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${LEVEL_STYLES[level]}`}>
-                        {level}
+                    {level !== undefined ? (
+                      <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${levelStyle(level)}`}>
+                        {level}yr
                       </span>
                     ) : (
                       <span className="text-gray-700">—</span>

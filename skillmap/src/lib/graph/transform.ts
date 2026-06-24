@@ -1,19 +1,20 @@
 import type { Node, Edge } from 'reactflow'
-import type { GraphNode, GraphEdge, SkillLevel } from '@/types'
+import type { GraphNode, GraphEdge } from '@/types'
 
-// Edge stroke width and color keyed by proficiency level
-const LEVEL_STROKE_WIDTH: Record<SkillLevel, number> = {
-  beginner: 1,
-  intermediate: 2,
-  advanced: 3,
-  expert: 5,
+// Edge stroke width scales with years of experience (clamped 1–5)
+function levelStrokeWidth(years: number): number {
+  if (years >= 10) return 5
+  if (years >= 5) return 3
+  if (years >= 2) return 2
+  return 1
 }
 
-const LEVEL_STROKE_COLOR: Record<SkillLevel, string> = {
-  beginner: '#6b7280',    // gray-500
-  intermediate: '#60a5fa', // blue-400
-  advanced: '#34d399',    // emerald-400
-  expert: '#a78bfa',      // violet-400
+// Edge color based on years of experience thresholds
+function levelStrokeColor(years: number): string {
+  if (years >= 10) return '#a78bfa' // violet-400
+  if (years >= 5) return '#34d399'  // emerald-400
+  if (years >= 2) return '#60a5fa'  // blue-400
+  return '#6b7280'                   // gray-500
 }
 
 // Lay users out in a left column, skills in a centre column, and projects in a right column,
@@ -76,18 +77,20 @@ export function transformGraphData(rawNodes: GraphNode[], rawEdges: GraphEdge[])
         data: e.data,
       }
     }
-    // User → Skill proficiency edge: variable thickness + color by level
+    // User → Skill proficiency edge: variable thickness + color by years of experience
     const { level } = e.data
+    const label = `${level}yr`
+    const color = levelStrokeColor(level)
     return {
       id: e.id,
       source: e.source,
       target: e.target,
-      label: level,
+      label,
       style: {
-        strokeWidth: LEVEL_STROKE_WIDTH[level],
-        stroke: LEVEL_STROKE_COLOR[level],
+        strokeWidth: levelStrokeWidth(level),
+        stroke: color,
       },
-      labelStyle: { fill: LEVEL_STROKE_COLOR[level], fontSize: 10 },
+      labelStyle: { fill: color, fontSize: 10 },
       labelBgStyle: { fill: '#111827', fillOpacity: 0.8 },
       data: e.data,
     }

@@ -6,9 +6,16 @@ import { runQuery } from '@/lib/neo4j'
 import { apiError, isConstraintError } from '@/lib/api'
 import { hasPermission } from '@/lib/rbac'
 import { validateStringArray, validateOptionalString } from '@/lib/validation'
-import type { Role } from '@/types'
+import type { Role, ProjectAssignment } from '@/types'
 
 const VALID_ROLES: Role[] = ['admin', 'manager', 'employee']
+const VALID_PA_STATUSES = ['current', 'previous'] as const
+
+/** Parse the raw Neo4j projectAssignments string into typed objects, with fallback. */
+function parseProjectAssignments(raw: string | null | undefined): ProjectAssignment[] {
+  if (!raw) return []
+  try { return JSON.parse(raw) as ProjectAssignment[] } catch { return [] }
+}
 
 // GET /api/users — any authenticated user can list users
 // department and role are only returned to manager+ (VULN-002 privacy)
@@ -30,7 +37,7 @@ export async function GET() {
       certifications: string[] | null
       languages: string[] | null
       shortDescription: string | null
-      projects: string[] | null
+      projectAssignments: string | null
     }>(
       canSeeSensitive
         ? `MATCH (u:User)
@@ -38,17 +45,21 @@ export async function GET() {
                   u.seniority AS seniority, u.role AS role,
                   u.education AS education, u.certifications AS certifications,
                   u.languages AS languages,
-                  u.shortDescription AS shortDescription, u.projects AS projects
+                  u.shortDescription AS shortDescription,
+                  u.projectAssignments AS projectAssignments
            ORDER BY u.name`
         : `MATCH (u:User)
            RETURN u.id AS id, u.name AS name,
                   u.seniority AS seniority,
                   u.education AS education, u.certifications AS certifications,
                   u.languages AS languages,
-                  u.shortDescription AS shortDescription, u.projects AS projects
+                  u.shortDescription AS shortDescription,
+                  u.projectAssignments AS projectAssignments
            ORDER BY u.name`
     )
-    return NextResponse.json(users)
+    return NextResponse.json(
+      users.map((u) => ({ ...u, projectAssignments: parseProjectAssignments(u.projectAssignments) }))
+    )
   } catch (error) {
     return apiError(error)
   }
@@ -70,7 +81,7 @@ export async function POST(request: NextRequest) {
   }
   try {
     const body = await request.json()
-    const { name, email: rawEmail, department, seniority, role, education, certifications, languages, shortDescription, projects } = body
+    const { name, email: rawEmail, department, seniority, role, education, certifications, languages, shortDescription, projectAssignments } = body
 
     // Normalize email to lowercase so duplicates are caught regardless of input casing
     const email = typeof rawEmail === 'string' ? rawEmail.toLowerCase().trim() : rawEmail
@@ -104,13 +115,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Validate certifications, languages, and projects are bounded string arrays (VULN-010)
-    for (const [field, value] of [['certifications', certifications], ['languages', languages], ['projects', projects]] as [string, unknown][]) {
+    // Validate certifications and languages are bounded string arrays (VULN-010)
+    for (const [field, value] of [['certifications', certifications], ['languages', languages]] as [string, unknown][]) {
       const err = validateStringArray(field, value)
       if (err) return NextResponse.json({ error: err }, { status: 400 })
     }
     const descErr = validateOptionalString('shortDescription', shortDescription)
     if (descErr) return NextResponse.json({ error: descErr }, { status: 400 })
+
+    // Validate projectAssignments structure
+    if (projectAssignments !== undefined) {
+      if (!Array.isArray(projectAssignments)) {
+        return NextResponse.json({ error: 'projectAssignments must be an array' }, { status: 400 })
+      }
+      for (const pa of projectAssignments as ProjectAssignment[]) {
+        if (!pa.projectId || !VALID_PA_STATUSES.includes(pa.status)) {
+          return NextResponse.json({ error: 'Each projectAssignment must have projectId and status (current|previous)' }, { status: 400 })
+        }
+      }
+    }
 
     // Reject duplicate emails before attempting to create
     const existing = await runQuery<{ id: string }>(
@@ -125,26 +148,28 @@ export async function POST(request: NextRequest) {
     }
 
     const id = randomUUID()
-    // Store optional arrays/strings as null when not provided so the property is always present
     const edu: string[] = education ?? []
     const certs: string[] = certifications ?? []
     const langs: string[] = languages ?? []
     const desc: string = typeof shortDescription === 'string' ? shortDescription.trim() : ''
-    const projs: string[] = projects ?? []
+    const paArray: ProjectAssignment[] = Array.isArray(projectAssignments) ? projectAssignments : []
+    const paJson = JSON.stringify(paArray)
+    // Derive flat project IDs for graph edge creation
+    const projectIds = paArray.map((pa) => pa.projectId)
 
-    // Use parameterized query — never interpolate user input
     await runQuery(
       `CREATE (u:User {
          id: $id, name: $name, email: $email,
          department: $department, seniority: $seniority, role: $role,
          education: $education, certifications: $certifications, languages: $languages,
-         shortDescription: $shortDescription, projects: $projects
+         shortDescription: $shortDescription,
+         projectAssignments: $projectAssignments, projects: $projects
        })`,
-      { id, name, email, department, seniority, role, education: edu, certifications: certs, languages: langs, shortDescription: desc, projects: projs }
+      { id, name, email, department, seniority, role, education: edu, certifications: certs, languages: langs, shortDescription: desc, projectAssignments: paJson, projects: projectIds }
     )
 
     return NextResponse.json(
-      { id, name, email, department, seniority, role, education: edu, certifications: certs, languages: langs, shortDescription: desc, projects: projs },
+      { id, name, email, department, seniority, role, education: edu, certifications: certs, languages: langs, shortDescription: desc, projectAssignments: paArray },
       { status: 201 }
     )
   } catch (error) {
