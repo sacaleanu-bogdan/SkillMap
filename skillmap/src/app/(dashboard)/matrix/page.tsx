@@ -3,23 +3,29 @@ import { redirect } from 'next/navigation'
 import { authOptions } from '@/lib/auth'
 import { runQuery } from '@/lib/neo4j'
 import { SkillMatrix } from '@/components/ui/SkillMatrix'
-import type { User, Skill, SkillLevel } from '@/types'
+import type { User, Skill, SkillLevel, Project, ProjectAssignment } from '@/types'
 
 // Force dynamic rendering — this page calls Neo4j at request time,
 // so it must never be statically prerendered during `next build`.
 export const dynamic = 'force-dynamic'
 
-// Server component — fetches users, skills, and all HAS_SKILL relationships
+function parseProjectAssignments(raw: string | null | undefined): ProjectAssignment[] {
+  if (!raw) return []
+  try { return JSON.parse(raw) as ProjectAssignment[] } catch { return [] }
+}
+
+// Server component — fetches users, skills, projects, and all HAS_SKILL relationships
 // directly from Neo4j and passes them to the client SkillMatrix component.
 export default async function MatrixPage() {
   const session = await getServerSession(authOptions)
   if (!session) redirect('/sign-in')
 
-  const [users, skills, relationships] = await Promise.all([
-    runQuery<User>(
+  const [rawUsers, skills, relationships, projects] = await Promise.all([
+    runQuery<User & { projectAssignments: string | null }>(
       `MATCH (u:User)
        RETURN u.id AS id, u.name AS name, u.email AS email,
-              u.department AS department, u.seniority AS seniority, u.role AS role
+              u.department AS department, u.seniority AS seniority, u.role AS role,
+              u.projectAssignments AS projectAssignments
        ORDER BY u.name`
     ),
     runQuery<Skill>(
@@ -31,7 +37,15 @@ export default async function MatrixPage() {
       `MATCH (u:User)-[r:HAS_SKILL]->(s:Skill)
        RETURN u.id AS userId, s.id AS skillId, r.level AS level`
     ),
+    runQuery<Project>(
+      `MATCH (p:Project) RETURN p.id AS id, p.name AS name ORDER BY p.name`
+    ),
   ])
+
+  const users: User[] = rawUsers.map((u) => ({
+    ...u,
+    projectAssignments: parseProjectAssignments(u.projectAssignments),
+  }))
 
   // Build a lookup map: levelMap[userId][skillId] = level
   const levelMap: Record<string, Record<string, SkillLevel>> = {}
@@ -43,7 +57,7 @@ export default async function MatrixPage() {
   return (
     <div className="h-full overflow-auto p-6">
       <h1 className="text-2xl font-bold text-white mb-6">Skill Matrix</h1>
-      <SkillMatrix users={users} skills={skills} levelMap={levelMap} />
+      <SkillMatrix users={users} skills={skills} projects={projects} levelMap={levelMap} />
     </div>
   )
 }
