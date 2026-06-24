@@ -8,16 +8,21 @@ import ReactFlow, {
   useNodesState,
   useEdgesState,
   type NodeTypes,
+  type Node,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useSession } from 'next-auth/react'
 import { useGraphData } from '@/hooks/useGraphData'
 import { UserNode } from './UserNode'
 import { SkillNode } from './SkillNode'
 import { ProjectNode } from './ProjectNode'
 import { FilterBar, type FilterCriterion, type SkillCriterion, type ProjectCriterion } from './FilterBar'
-import type { User, ProjectAssignment } from '@/types'
+import { UserProfilePanel } from '@/components/ui/UserProfilePanel'
+import { EditProfileModal } from '@/components/ui/EditProfileModal'
+import { EditUserModal } from '@/components/ui/EditUserModal'
+import type { User, ProjectAssignment, Skill, Project } from '@/types'
 
 // Register custom node types — keys must match the `type` field on each node
 const NODE_TYPES: NodeTypes = {
@@ -26,15 +31,38 @@ const NODE_TYPES: NodeTypes = {
   project: ProjectNode,
 }
 
+type SkillEntry = { name: string; category: string; years: number }
+type ProjectEntry = { name: string; status: 'current' | 'previous'; contribution?: string }
+
+type GraphOverlay =
+  | { type: 'view'; userId: string; meta: User; skills: SkillEntry[]; projects: ProjectEntry[]; canEdit: boolean; isOwn: boolean }
+  | { type: 'editOwn' }
+  | { type: 'editUser'; user: User }
+
 // Full-screen interactive graph canvas with multi-criteria filter support.
 export function SkillGraph() {
   const { nodes: apiNodes, edges: apiEdges, projects: apiProjects, loading, error, refetch } = useGraphData()
+
+  const { data: session } = useSession()
+  const isAdmin = session?.user?.role === 'admin'
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [filters, setFilters] = useState<FilterCriterion[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [visibleTypes, setVisibleTypes] = useState({ user: true, skill: true, project: true })
+
+  // Overlay state — drives which modal/panel is rendered on top of the graph
+  const [overlay, setOverlay] = useState<GraphOverlay | null>(null)
+
+  // Fetch the current user's Neo4j ID once on mount for ownership checks
+  useEffect(() => {
+    fetch('/api/users/me')
+      .then((r) => r.json())
+      .then((data) => { if (data.id) setCurrentUserId(data.id) })
+      .catch(() => {})
+  }, [])
 
   // Refetch graph data whenever any user edits their profile
   useEffect(() => {
@@ -55,6 +83,56 @@ export function SkillGraph() {
 
   // Projects come directly from the API response, already sorted
   const availableProjects = useMemo(() => apiProjects, [apiProjects])
+
+  // All skill objects for EditUserModal's skill picker
+  const allSkillsList = useMemo(
+    () => apiNodes.filter((n) => n.type === 'skill').map((n) => n.data.meta as Skill),
+    [apiNodes]
+  )
+
+  // All project objects for EditUserModal's project picker
+  const allProjectsList = useMemo(
+    () => apiProjects as unknown as Project[],
+    [apiProjects]
+  )
+
+  // Handle user node clicks — build profile data from the already-loaded graph and open the panel
+  const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+    if (node.type !== 'user') return
+
+    const rawId = node.id.replace(/^user-/, '')
+    const meta = (node.data as { meta: User }).meta
+
+    // Derive skills from outgoing skill edges, resolving names from skill nodes
+    const skills = apiEdges
+      .filter((e) => e.source === node.id && (e.data as { edgeKind?: string }).edgeKind === 'skill')
+      .map((e) => {
+        const skillNode = apiNodes.find((n) => n.id === e.target)
+        const skillMeta = skillNode?.data.meta as Skill | undefined
+        return {
+          name: (skillNode?.data.label as string) ?? e.target,
+          category: skillMeta?.category ?? '',
+          years: (e.data as { level: number }).level,
+        }
+      })
+      .sort((a, b) => b.years - a.years)
+
+    // Derive projects by cross-referencing assignments with the projects list
+    const assignments: ProjectAssignment[] = meta.projectAssignments ?? []
+    const projects = assignments.map((pa) => {
+      const proj = apiProjects.find((p) => (p as unknown as Project).id === pa.projectId)
+      return {
+        name: (proj as unknown as Project | undefined)?.name ?? pa.projectId,
+        status: pa.status,
+        contribution: pa.contribution,
+      }
+    })
+
+    const isOwn = currentUserId !== null && currentUserId === rawId
+    const canEdit = isOwn || isAdmin
+
+    setOverlay({ type: 'view', userId: rawId, meta, skills, projects, canEdit, isOwn })
+  }, [apiNodes, apiEdges, apiProjects, currentUserId, isAdmin])
 
   // Build a lookup map: projectId → name (used for text search against project names)
   const projectNameById = useMemo(
@@ -287,6 +365,7 @@ export function SkillGraph() {
         edges={displayEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeClick={handleNodeClick}
         nodeTypes={NODE_TYPES}
         fitView
         fitViewOptions={{ padding: 0.15 }}
@@ -305,6 +384,37 @@ export function SkillGraph() {
           className="!bg-gray-900 !border-gray-700"
         />
       </ReactFlow>
+
+      {/* Overlay: view-only panel, own-profile edit, or admin user edit */}
+      {overlay?.type === 'view' && (
+        <UserProfilePanel
+          userId={overlay.userId}
+          meta={overlay.meta}
+          skills={overlay.skills}
+          projects={overlay.projects}
+          canEdit={overlay.canEdit}
+          onEdit={overlay.canEdit ? (fullUser) => {
+            if (overlay.isOwn) {
+              setOverlay({ type: 'editOwn' })
+            } else {
+              setOverlay({ type: 'editUser', user: fullUser })
+            }
+          } : undefined}
+          onClose={() => setOverlay(null)}
+        />
+      )}
+      {overlay?.type === 'editOwn' && (
+        <EditProfileModal onClose={() => setOverlay(null)} />
+      )}
+      {overlay?.type === 'editUser' && (
+        <EditUserModal
+          user={overlay.user}
+          skills={allSkillsList}
+          projects={allProjectsList}
+          onClose={() => setOverlay(null)}
+          onSaved={() => { setOverlay(null); refetch() }}
+        />
+      )}
     </div>
   )
 }

@@ -8,6 +8,20 @@
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "test"
+		},
+		{
+			"label": "jest-users-id",
+			"type": "shell",
+			"command": "npx jest --no-coverage --testPathPattern=users-id",
+			"isBackground": false,
+			"group": "test"
+		},
+		{
+			"label": "jest-users-id-v2",
+			"type": "shell",
+			"command": "npx jest --no-coverage --testPathPatterns=users-id",
+			"isBackground": false,
+			"group": "test"
 		}
 	]
 }

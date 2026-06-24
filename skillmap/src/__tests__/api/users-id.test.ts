@@ -1,8 +1,8 @@
 /**
- * PATCH /api/users/[id] — update user profile
+ * GET & PATCH /api/users/[id]
  */
 import { NextRequest } from 'next/server'
-import { PATCH } from '@/app/api/users/[id]/route'
+import { GET, PATCH } from '@/app/api/users/[id]/route'
 import { getServerSession } from 'next-auth'
 import { runQuery } from '@/lib/neo4j'
 import { ADMIN_SESSION, EMPLOYEE_SESSION } from './__helpers__/sessions'
@@ -200,5 +200,74 @@ describe('PATCH /api/users/[id]', () => {
 
     const [req, ctx] = patchReq('u1', validBody)
     expect((await PATCH(req, ctx)).status).toBe(500)
+  })
+})
+
+// ─── GET /api/users/[id] ─────────────────────────────────────────────────────
+
+function getReq(id: string): [NextRequest, { params: Promise<{ id: string }> }] {
+  return [
+    new NextRequest(`http://localhost/api/users/${id}`),
+    { params: Promise.resolve({ id }) },
+  ]
+}
+
+describe('GET /api/users/[id]', () => {
+  it('returns 401 when unauthenticated', async () => {
+    mockGetServerSession.mockResolvedValueOnce(null)
+    const [req, ctx] = getReq('u1')
+    expect((await GET(req, ctx)).status).toBe(401)
+  })
+
+  it('returns 404 when the user does not exist', async () => {
+    mockGetServerSession.mockResolvedValueOnce(EMPLOYEE_SESSION)
+    mockRunQuery.mockResolvedValueOnce([]) // empty result
+
+    const [req, ctx] = getReq('nonexistent')
+    expect((await GET(req, ctx)).status).toBe(404)
+  })
+
+  it('returns public profile fields to an employee', async () => {
+    mockGetServerSession.mockResolvedValueOnce(EMPLOYEE_SESSION)
+    mockRunQuery.mockResolvedValueOnce([{
+      id: 'u1', name: 'Alice', email: 'alice@example.com',
+      department: 'Engineering', seniority: 'Senior', role: 'employee',
+      education: ['2018 – 2022: MIT, CS'], certifications: ['AWS SAA'],
+      languages: ['English'], shortDescription: 'Full-stack dev',
+      projectAssignments: '[]',
+    }])
+
+    const [req, ctx] = getReq('u1')
+    const res = await GET(req, ctx)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.name).toBe('Alice')
+    expect(body.education).toEqual(['2018 – 2022: MIT, CS'])
+    // Sensitive fields must be absent for employee role
+    expect(body.email).toBeUndefined()
+    expect(body.role).toBeUndefined()
+  })
+
+  it('returns email and role to an admin', async () => {
+    mockGetServerSession.mockResolvedValueOnce(ADMIN_SESSION)
+    mockRunQuery.mockResolvedValueOnce([{
+      id: 'u1', name: 'Alice', email: 'alice@example.com',
+      department: 'Engineering', seniority: 'Senior', role: 'employee',
+      education: null, certifications: null, languages: null,
+      shortDescription: null, projectAssignments: null,
+    }])
+
+    const [req, ctx] = getReq('u1')
+    const body = await (await GET(req, ctx)).json()
+    expect(body.email).toBe('alice@example.com')
+    expect(body.role).toBe('employee')
+  })
+
+  it('returns 500 on a database error', async () => {
+    mockGetServerSession.mockResolvedValueOnce(ADMIN_SESSION)
+    mockRunQuery.mockRejectedValueOnce(new Error('DB error'))
+
+    const [req, ctx] = getReq('u1')
+    expect((await GET(req, ctx)).status).toBe(500)
   })
 })

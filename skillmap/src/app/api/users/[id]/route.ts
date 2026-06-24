@@ -9,6 +9,62 @@ import type { Role, ProjectAssignment } from '@/types'
 const VALID_ROLES: Role[] = ['admin', 'manager', 'employee']
 const VALID_PA_STATUSES = ['current', 'previous'] as const
 
+// GET /api/users/[id] — any authenticated user can view a user's public profile.
+// Email and role are only returned to manager/admin (RBAC privacy rule).
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await getServerSession(authOptions)
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  try {
+    const { id } = await params
+
+    const results = await runQuery<{
+      id: string; name: string; email: string; department: string
+      seniority: string; role: Role; education: string[] | null
+      certifications: string[] | null; languages: string[] | null
+      shortDescription: string | null; projectAssignments: string | null
+    }>(
+      `MATCH (u:User {id: $id})
+       RETURN u.id AS id, u.name AS name, u.email AS email,
+              u.department AS department, u.seniority AS seniority, u.role AS role,
+              u.education AS education, u.certifications AS certifications,
+              u.languages AS languages, u.shortDescription AS shortDescription,
+              u.projectAssignments AS projectAssignments`,
+      { id }
+    )
+
+    if (results.length === 0) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    const user = results[0]
+    let projectAssignments: ProjectAssignment[] = []
+    try { projectAssignments = JSON.parse(user.projectAssignments ?? '[]') } catch { /* empty */ }
+
+    const canSeeSensitive = session.user.role === 'admin' || session.user.role === 'manager'
+
+    return NextResponse.json({
+      id: user.id,
+      name: user.name,
+      department: user.department,
+      seniority: user.seniority,
+      education: user.education ?? [],
+      certifications: user.certifications ?? [],
+      languages: user.languages ?? [],
+      shortDescription: user.shortDescription ?? '',
+      projectAssignments,
+      ...(canSeeSensitive && { email: user.email, role: user.role }),
+    })
+  } catch (error) {
+    return apiError(error)
+  }
+}
+
 // Education entry format: "YYYY – YYYY: description" or "YYYY – present: description"
 // Accepts both en-dash (–) and hyphen (-) as separators
 const EDUCATION_REGEX = /^\d{4}\s*[–-]\s*(\d{4}|present):\s*.+$/i
