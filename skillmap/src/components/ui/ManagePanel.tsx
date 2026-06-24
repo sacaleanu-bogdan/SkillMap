@@ -6,6 +6,7 @@ import type { User, Skill, Project, SkillLevel, Role, ProjectAssignment } from '
 import { EditUserModal } from './EditUserModal'
 import { EditSkillModal } from './EditSkillModal'
 import { EditProjectModal } from './EditProjectModal'
+import { ImportUsersPanel } from './ImportUsersPanel'
 
 const INPUT =
   'w-full rounded bg-gray-800 border border-gray-700 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
@@ -82,7 +83,7 @@ interface Props {
 export function ManagePanel({ users, skills, projects }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
-  const [activeTab, setActiveTab] = useState<'users' | 'skills' | 'projects'>('users')
+  const [activeTab, setActiveTab] = useState<'users' | 'skills' | 'projects' | 'import'>('users')
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [editingSkill, setEditingSkill] = useState<Skill | null>(null)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
@@ -206,6 +207,7 @@ export function ManagePanel({ users, skills, projects }: Props) {
           { key: 'users', label: `Users (${users.length})` },
           { key: 'skills', label: `Skills (${skills.length})` },
           { key: 'projects', label: `Projects (${projects.length})` },
+          { key: 'import', label: 'Import PDF' },
         ] as const).map(({ key, label }) => (
           <button
             key={key}
@@ -689,6 +691,13 @@ export function ManagePanel({ users, skills, projects }: Props) {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Import PDF tab ────────────────────────────────────── */}
+      {activeTab === 'import' && (
+        <div className="flex-1 overflow-y-auto">
+          <ImportUsersPanel />
         </div>
       )}
 
